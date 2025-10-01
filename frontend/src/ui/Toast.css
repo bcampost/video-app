@@ -1,0 +1,101 @@
+/* ===== Paleta: lee tokens globales si existen ===== */
+:root {
+  --tst-z: 1400;
+  --tst-bg: var(--panel-bg, #0f172a);         /* fondo tarjeta */
+  --tst-text: var(--panel-text, #e5e7eb);     /* texto */
+  --tst-border: var(--border-color, rgba(255,255,255,.08));
+  --tst-shadow: 0 10px 30px rgba(0,0,0,.45);
+
+  --tst-success: var(--success-color, #22c55e);
+  --tst-error:   var(--error-color,   #ef4444);
+  --tst-info:    var(--accent-color,  #4f46e5);
+}
+
+/* ===== Contenedor: top-right en desktop, bottom en móvil ===== */
+.tst-container {
+  position: fixed;
+  z-index: var(--tst-z);
+  inset: 16px 16px auto auto; /* top-right */
+  display: grid;
+  gap: 12px;
+  width: min(360px, 92vw);
+  pointer-events: none; /* no bloquea clicks detrás */
+}
+
+@media (max-width: 768px) {
+  .tst-container {
+    inset: auto 12px 12px 12px;      /* bottom */
+    justify-items: center;
+    width: auto;
+  }
+}
+
+/* ===== Tarjeta ===== */
+.tst {
+  pointer-events: auto; /* sí permite click en cerrar */
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: start;
+  gap: 10px;
+  background: var(--tst-bg);
+  color: var(--tst-text);
+  border: 1px solid var(--tst-border);
+  border-left: 4px solid transparent;
+  border-radius: 12px;
+  padding: 12px 12px 10px 12px;
+  box-shadow: var(--tst-shadow);
+  animation: tst-in .18s ease-out both;
+  position: relative;
+  overflow: hidden;
+}
+
+.tst--success { border-left-color: var(--tst-success); }
+.tst--error   { border-left-color: var(--tst-error); }
+.tst--info    { border-left-color: var(--tst-info); }
+
+.tst-icon { font-size: 18px; line-height: 1; margin-top: 2px; }
+.tst-title { font-weight: 700; font-size: 0.95rem; }
+.tst-msg { opacity: 0.9; margin-top: 2px; font-size: 0.92rem; }
+
+.tst-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--tst-text);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.tst-close:hover { background: rgba(255,255,255,.06); }
+.tst-close:focus-visible { outline: 2px solid var(--tst-info); outline-offset: 2px; }
+
+/* Barra de progreso (auto-cierre) */
+.tst-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.3));
+  transform-origin: left;
+  animation: tst-progress linear forwards;
+  opacity: .6;
+}
+.tst--success .tst-progress { background: linear-gradient(90deg, transparent, var(--tst-success)); }
+.tst--error   .tst-progress { background: linear-gradient(90deg, transparent, var(--tst-error)); }
+.tst--info    .tst-progress { background: linear-gradient(90deg, transparent, var(--tst-info)); }
+
+@keyframes tst-progress {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@keyframes tst-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .tst, .tst-progress { animation: none; }
+}

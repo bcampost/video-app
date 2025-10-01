@@ -1,0 +1,51 @@
+.assign-container {
+  padding: 20px;
+  color: #fff;
+}
+
+.assign-container select {
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #fff;
+  border: 1px solid #777;
+}
+
+.assign-container ul {
+  list-style: none;
+  padding: 0;
+  margin-top: 10px;
+}
+
+.assign-container li {
+  margin-bottom: 8px;
+}
+
+.assign-container label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.assign-container input[type="checkbox"] {
+  margin-right: 8px;
+  transform: scale(1.2);
+}
+
+.assign-container button {
+  margin-top: 20px;
+  padding: 8px 14px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.assign-container button:hover {
+  background-color: #1e7e34;
+}
+
+.assign-container h2, h3 {
+  color: #f0f0f0;
+}

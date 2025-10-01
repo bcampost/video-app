@@ -1,0 +1,115 @@
+/* ========== QueuePanel.css ========== */
+
+/* General wrapper */
+.queue-panel {
+  padding: 16px;
+  background-color: var(--muted-gray);
+  border-left: 1px solid var(--border-color);
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+  color: var(--text-color);
+}
+
+/* Título */
+.queue-panel h3 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+/* Sucursal */
+.branch-status {
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+.branch-status h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--accent-color);
+}
+
+.branch-status p {
+  margin: 4px 0;
+  font-size: 0.9rem;
+}
+
+/* Lista de videos */
+.branch-status ul {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.branch-status li {
+  font-size: 0.85rem;
+  color: var(--text-color);
+}
+
+/* Error */
+.error {
+  color: red;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+/* ========== Estilo especial para móvil ========== */
+
+/* Base oculto / visible para mobile queue */
+.mobile-queue-wrapper.hidden {
+  display: none !important;
+}
+.mobile-queue-wrapper.visible {
+  display: block !important;
+}
+
+/* Estilos del contenedor de la cola */
+.mobile-queue-wrapper {
+  margin: 12px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--muted-gray);
+  max-height: 50vh;
+  overflow: hidden;
+  position: relative;
+  z-index: 1000;
+}
+
+.mobile-queue-scroll {
+  padding: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.mobile-queue-scroll h3 {
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.mobile-queue-scroll h4 {
+  font-size: 0.95rem;
+  margin: 6px 0 2px;
+}
+
+.mobile-queue-scroll ul {
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+
+.mobile-queue-scroll li {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+/* Asegura que el sidebar permita overflow cuando se expanda */
+.sidebar-mobile {
+  overflow-y: visible !important;
+}
+
+/* Asegura que nav no oculte contenido */
+.sidebar-nav {
+  overflow: visible !important;
+}

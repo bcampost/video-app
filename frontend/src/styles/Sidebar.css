@@ -1,0 +1,248 @@
+/* ===== SIDEBAR ESTILOS BASE (los tuyos existentes) ===== */
+
+.sidebar {
+  width: 14.2857vw;
+  min-width: 180px;
+  max-width: 240px;
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+}
+
+.sidebar-logo {
+  margin-bottom: 30px;
+}
+.logo-img {
+  width: 80px;
+  height: auto;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 0 10px;
+}
+
+.nav-button {
+  background: none;
+  border: none;
+  color: var(--sidebar-text-muted);
+  font-size: 16px;
+  text-align: left;
+  padding: 10px 15px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 5px;
+}
+
+.nav-button::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background-color: transparent;
+  border-radius: 3px;
+  transition: background-color 0.3s;
+}
+
+.nav-button:hover {
+  background-color: var(--sidebar-hover-bg);
+  color: var(--sidebar-text-hover);
+}
+
+.nav-button.active {
+  color: var(--sidebar-text-active);
+  font-weight: bold;
+}
+
+.nav-button.active-videos::before {
+  background-color: #fbbf24;
+}
+.nav-button.active-branches::before {
+  background-color: #3b82f6;
+}
+.nav-button.active-assign::before {
+  background-color: #10b981;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 10px;
+}
+
+.theme-toggle-btn {
+  background: none;
+  border: 1px solid var(--sidebar-border);
+  padding: 8px 12px;
+  border-radius: 5px;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s, color 0.2s;
+}
+.theme-toggle-btn:hover {
+  background-color: var(--sidebar-hover-bg);
+  color: var(--sidebar-text-hover);
+}
+
+/* ===== MÓVIL / RESPONSIVE ===== */
+
+.hamburger-float {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1100;
+  font-size: 26px;
+  background: var(--accent-color);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.hamburger-float:hover {
+  transform: scale(1.05);
+  background-color: #0e9f6e;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1045;
+  transition: opacity 0.3s ease;
+}
+
+.sidebar-mobile {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  background-color: var(--bg-color);
+  z-index: 1050;
+  transition: transform 0.3s ease;
+  overflow-y: auto;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-collapsed {
+  transform: translateX(-100%);
+}
+
+.sidebar-expanded {
+  transform: translateX(0);
+  width: 100vw;  /* Cambiado para que ocupe todo el ancho en móvil */
+  padding: 20px;
+  max-width: 100vw;
+  box-sizing: border-box;
+  overflow-y: auto; /* Permitimos scroll vertical si el contenido es grande */
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-color);
+}
+
+.sidebar-logo-center {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.sidebar-logo-center img {
+  max-width: 80px;
+  height: auto;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.sidebar-footer {
+  margin-top: 24px;
+  padding: 0 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ===== ESTILOS PARA LA COLA / LISTADO EN MÓVIL ===== */
+
+.mobile-queue {
+  /* Asegura que ocupe todo el ancho disponible dentro del sidebar móvil */
+  width: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding-top: 12px;
+}
+
+.mobile-queue-scroll {
+  padding: 12px;
+  max-height: 50vh; /* Ajustable según lo que quieras mostrar */
+  overflow-y: auto;
+  font-size: 14px;
+  color: var(--text-color);
+  background-color: var(--muted-gray);
+  border-radius: 8px;
+}
+
+.mobile-queue-scroll h3 {
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+.mobile-queue-scroll h4 {
+  font-size: 0.95rem;
+  margin: 6px 0 2px;
+}
+
+.mobile-queue-scroll ul {
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+
+.mobile-queue-scroll li {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+/* Ajustes para ocultar el sidebar base en móviles */
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+}
+
+/* Botón extra que tenías para mostrar cola en escritorio — ocultarlo en móvil */
+@media (max-width: 768px) {
+  .queue-toggle-btn {
+    display: none;
+  }
+}

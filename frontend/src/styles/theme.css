@@ -1,0 +1,15 @@
+:root {
+  --bg-color: #1a1a1a;
+  --text-color: #ffffff;
+  --input-bg: #2b2b2b;
+  --border-color: #444;
+  --primary-color: #28a745;
+  --hover-color: #218838;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}

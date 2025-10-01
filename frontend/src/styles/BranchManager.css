@@ -1,0 +1,50 @@
+.branch-manager {
+  padding: 20px;
+  color: #fff;
+}
+
+.branch-manager form {
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.branch-manager input {
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #fff;
+  border: 1px solid #555;
+}
+
+.branch-manager button {
+  background-color: #007bff;
+  color: white;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.branch-manager button:hover {
+  background-color: #0056b3;
+}
+
+.branch-manager table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.branch-manager th,
+.branch-manager td {
+  border: 1px solid #555;
+  padding: 10px;
+  text-align: left;
+  color: #ddd;
+}
+
+.branch-manager th {
+  background-color: #222;
+}
