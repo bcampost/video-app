@@ -134,4 +134,37 @@ class BranchController extends Controller
         $branch->videos()->detach($video->id);
         return response()->noContent(); // 204
     }
+
+    public function show(Branch $branch)
+    {
+        // Traemos la cola ordenada por posición
+        $branch->load([
+            'videos' => function ($q) {
+                $q->select('videos.id','videos.title','videos.path','videos.file_path','videos.url')
+                ->orderBy('branch_video.position','asc');
+            }
+        ]);
+
+        // Normalizamos posibles nombres de columna de ruta pública:
+        $queue = $branch->videos->map(function ($v) {
+            return [
+                'id'    => $v->id,
+                'title' => $v->title,
+                // path puede ser 'url' (ya pública) o un path tipo "videos/archivo.mp4"
+                'url'   => $v->url ?? null,
+                'path'  => $v->path ?? $v->file_path ?? null,
+            ];
+        })->values();
+
+        return response()->json([
+            'data' => [
+                'id'    => $branch->id,
+                'name'  => $branch->name,
+                'code'  => $branch->code,
+                'queue' => $queue,
+            ]
+        ]);
+    }
+
+
 }

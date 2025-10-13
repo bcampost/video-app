@@ -11,8 +11,7 @@ const BranchView = lazy(() => import('./pages/BranchView.jsx'));
 
 const router = createBrowserRouter(
   [
-    // 👇 Cambia '/' por '/*'
-    { path: '/*', element: <App /> },
+    // Vista TV por sucursal
     {
       path: '/sucursal/:code',
       element: (
@@ -21,6 +20,9 @@ const router = createBrowserRouter(
         </Suspense>
       ),
     },
+    // Tu app principal (panel)
+    { path: '/*', element: <App /> },
+
     { path: '*', element: <div style={{ padding: 24 }}>404</div> },
   ],
   {

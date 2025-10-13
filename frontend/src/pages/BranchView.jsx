@@ -2,287 +2,381 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import './BranchView.css';
 
+const BACKEND =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_BACKEND_URL) ||
+  'http://127.0.0.1:8000';
 
-
-const BACKEND = 'http://127.0.0.1:8000';
 const API = `${BACKEND}/api`;
 
 function toStorageUrl(input) {
   if (!input) return '';
   const s = String(input).trim();
   if (/^https?:\/\//i.test(s)) return s;
-  let p = s.replace(/^public\//i, '').replace(/^storage\//i, '');
-  if (/^videos\//i.test(p)) return `${BACKEND}/storage/${p}`;
-  return `${BACKEND}/storage/${p}`;
+  const clean = s.replace(/^public\//i, '').replace(/^storage\//i, '');
+  return `${BACKEND}/storage/${clean}`;
 }
-function guessMime(url) {
-  const ext = url.split('?')[0].split('.').pop().toLowerCase();
-  switch (ext) {
-    case 'mp4':  return 'video/mp4';
-    case 'webm': return 'video/webm';
-    case 'ogg':
-    case 'ogv':  return 'video/ogg';
-    case 'mov':  return 'video/quicktime';
-    case 'avi':  return 'video/x-msvideo';
-    case 'mkv':  return 'video/x-matroska';
-    default:     return 'video/mp4';
-  }
+
+function fmtTime(sec) {
+  if (!isFinite(sec)) return '00:00';
+  const s = Math.floor(sec);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
 export default function BranchView() {
   const { code } = useParams();
 
-  const [branchName, setBranchName] = useState(code || 'Sucursal');
-  const [videos, setVideos] = useState([]);
-  const [index, setIndex] = useState(0);
+  const videoRef = useRef(null);
+  const wakeLockRef = useRef(null);
+  const switchingRef = useRef(false);
+  const lastReportedRef = useRef(null); // ← evita reportes duplicados
 
-  const [resolvedSrc, setResolvedSrc] = useState('');
-  const [fading, setFading] = useState(false);
-  const [transitioning, setTransitioning] = useState(false);
-  const [needsClickForSound, setNeedsClickForSound] = useState(false);
+  const [branchName, setBranchName] = useState(code || 'Sucursal');
+  const [queue, setQueue] = useState([]);
+  const [idx, setIdx] = useState(0);
+
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [rate, setRate] = useState(1);
+  const [progress, setProgress] = useState({ cur: 0, dur: 0, buf: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [message, setMessage] = useState('');
 
-  const videoRef = useRef(null);
-  const switchingRef = useRef(false);
-  const errorCountRef = useRef({});
+  const current = queue[idx] || null;
 
-  const queueRef = useRef(null);
-
-
-  const now = videos[index] || null;
-
-  // Carga periódica de cola + nombre de sucursal
+  // Cargar/actualizar cola cada 30s
   useEffect(() => {
     let alive = true;
-    async function load() {
+
+    const load = async () => {
       try {
-        const res = await fetch(`${API}/branch/${code}/videos`);
+        const res = await fetch(`${API}/branch/${encodeURIComponent(code)}/videos`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        let list = Array.isArray(data) ? data : (data.videos || []);
-        if (!Array.isArray(list)) list = [];
-        if (alive) {
-          setVideos(list);
-          if (data?.branch?.name) setBranchName(data.branch.name);
-          setIndex((i) => (list.length ? Math.min(i, list.length - 1) : 0));
+
+        const list = Array.isArray(data?.videos)
+          ? data.videos
+              .map((v) => {
+                const raw = v.url || v.filename || v.file || v.path;
+                const src = toStorageUrl(raw);
+                return src ? { id: v.id, title: v.title || 'Video', src } : null;
+              })
+              .filter(Boolean)
+          : [];
+
+        if (!alive) return;
+        setQueue(list);
+        setBranchName(data?.branch?.name || code);
+        if (list.length === 0) {
+          setIdx(0);
+        } else {
+          setIdx((i) => Math.min(i, list.length - 1));
         }
       } catch (e) {
-        console.error('[BranchView] load', e);
+        console.error('[TV] load error', e);
       }
-    }
+    };
+
     load();
-    const t = setInterval(load, 15000);
-    return () => { alive = false; clearInterval(t); };
+    const t = setInterval(load, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, [code]);
 
-// ⬇⬇⬇ Pon esto DESPUÉS del useEffect que carga la cola
-useEffect(() => {
-  let alive = true;
-  (async () => {
-    try {
-      // Si ya tenemos nombre “humano”, no hacemos nada
-      if (branchName && branchName !== code) return;
-
-      const res = await fetch(`${API}/branches`);
-      if (!res.ok) return;
-      const list = await res.json();
-      if (!alive) return;
-
-      if (Array.isArray(list)) {
-        const b = list.find((x) => String(x.code) === String(code));
-        if (b?.name) setBranchName(b.name);
-      }
-    } catch (e) {
-      // silencioso
-    }
-  })();
-  return () => { alive = false; };
-}, [code, branchName]);
-
-
-
-  // Cambio con transición suave (fade + letterbox + zoom)
-  const safeSwitch = async (nextIdx) => {
-    if (!videos.length || switchingRef.current) return;
-    switchingRef.current = true;
-
-    // activa animaciones CSS
-    setTransitioning(true);
-    setFading(true);
-
-    // tiempos suaves y coherentes con CSS (≈ 800ms out + 900ms in)
-    await new Promise((r) => setTimeout(r, 800));
-    setIndex((nextIdx + videos.length) % videos.length);
-    await new Promise((r) => setTimeout(r, 900));
-
-    setFading(false);
-    setTransitioning(false);
-    switchingRef.current = false;
-  };
-  const next = () => safeSwitch(index + 1);
-  const prev = () => safeSwitch(index - 1);
-
-  // Preparar el <video> al cambiar "now"
+  // Wake Lock (mantener pantalla encendida)
   useEffect(() => {
-    setMessage('');
-    setNeedsClickForSound(false);
-    setResolvedSrc('');
+    let mounted = true;
+    (async () => {
+      try {
+        if ('wakeLock' in navigator && navigator.wakeLock.request) {
+          const lock = await navigator.wakeLock.request('screen');
+          if (mounted) wakeLockRef.current = lock;
+          document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+              try {
+                wakeLockRef.current = await navigator.wakeLock.request('screen');
+              } catch {}
+            }
+          });
+        }
+      } catch {}
+    })();
+    return () => {
+      mounted = false;
+      try {
+        wakeLockRef.current && wakeLockRef.current.release();
+      } catch {}
+    };
+  }, []);
 
+  // Preparar video cuando cambia el item actual
+  useEffect(() => {
     const el = videoRef.current;
-    if (!el || !now) return;
+    setMessage('');
+    setIsLoading(true);
+    setPlaying(false);
 
-    const file = now.filename || now.file || '';
-    const url = toStorageUrl(file);
-    setResolvedSrc(url);
-    if (!url) return;
+    if (!el || !current) return;
 
-    // reiniciar fuentes
+    // Reset sources
     el.pause();
     el.removeAttribute('src');
     while (el.firstChild) el.removeChild(el.firstChild);
 
-    const source = document.createElement('source');
-    source.src = url;
-    source.type = guessMime(url);
-    el.appendChild(source);
+    const src = document.createElement('source');
+    src.src = current.src;
+    src.type = 'video/mp4';
+    el.appendChild(src);
 
-    // preferimos con sonido; si el navegador lo bloquea, caemos a mute + CTA
-    el.playsInline = true;
-    el.preload = 'auto';
-    el.muted = false;
     el.load();
-
-    el.play()
-      .then(() => setNeedsClickForSound(false))
-      .catch(async () => {
+    el.play().then(
+      () => {
+        setIsLoading(false);
+        setPlaying(true);
+      },
+      async () => {
+        // Autoplay bloqueado → intentamos muted
         try {
           el.muted = true;
+          setMuted(true);
           await el.play();
-          setNeedsClickForSound(true);
+          setIsLoading(false);
+          setPlaying(true);
         } catch {
-          setNeedsClickForSound(true);
-          setMessage('El navegador requiere una interacción para iniciar el video.');
+          setMessage('Toca ▶ para iniciar la reproducción');
+          setIsLoading(false);
         }
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now?.id]);
+      }
+    );
+  }, [current?.src]);
 
-  const onEnded = () => { if (videos.length) next(); };
-  const onError = async () => {
-    if (!now) return;
-    const id = now.id ?? `i${index}`;
-    errorCountRef.current[id] = (errorCountRef.current[id] || 0) + 1;
+  // 👇 Reporta al backend qué video está sonando ahora
+  useEffect(() => {
+    if (!current?.id) return;
+    if (lastReportedRef.current === current.id) return;
+    lastReportedRef.current = current.id;
 
-    const allFailed = videos.length &&
-      videos.every((v, i) => (errorCountRef.current[v.id ?? `i${i}`] || 0) >= 2);
-    if (allFailed) {
-      setMessage('No fue posible reproducir ningún video. Verifica que /storage/videos/... sea accesible.');
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 600));
-    next();
+    fetch(`${API}/branch/${encodeURIComponent(code)}/now-playing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: current.id }),
+    }).catch(() => {});
+  }, [current?.id, code]);
+
+  // Eventos del <video>
+  const onLoadedMetadata = () => {
+    const el = videoRef.current;
+    setProgress({ cur: el.currentTime || 0, dur: el.duration || 0, buf: el.buffered?.end?.(0) || 0 });
   };
 
-  const enableSound = async () => {
+  const onTimeUpdate = () => {
+    const el = videoRef.current;
+    const buffered = (el.buffered && el.buffered.length && el.buffered.end(el.buffered.length - 1)) || 0;
+    setProgress({ cur: el.currentTime || 0, dur: el.duration || 0, buf: buffered });
+  };
+
+  const onWaiting = () => setIsLoading(true);
+  const onPlaying = () => setIsLoading(false);
+
+  const onEnded = () => next();
+
+  // Controles
+  const togglePlay = async () => {
     const el = videoRef.current;
     if (!el) return;
-    try {
-      el.muted = false;
-      await el.play();
-      setNeedsClickForSound(false);
-      setMessage('');
-    } catch {
-      setMessage('No se pudo activar el sonido automáticamente. Intenta de nuevo.');
+    if (el.paused) {
+      try {
+        await el.play();
+        setPlaying(true);
+      } catch (e) {
+        setMessage('No se pudo iniciar automáticamente');
+      }
+    } else {
+      el.pause();
+      setPlaying(false);
     }
   };
 
-  const title = useMemo(() => now?.title || '—', [now]);
+  const seek = (t) => {
+    const el = videoRef.current;
+    if (!el || !isFinite(t)) return;
+    el.currentTime = Math.max(0, Math.min(t, el.duration || t));
+  };
+
+  const seekBy = (delta) => seek((videoRef.current?.currentTime || 0) + delta);
+
+  const setProgressFromClick = (e) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    const dur = progress.dur || 0;
+    seek(ratio * dur);
+  };
+
+  const setVol = (v) => {
+    const el = videoRef.current;
+    const val = Math.max(0, Math.min(1, v));
+    setVolume(val);
+    if (el) el.volume = val;
+    if (val === 0) setMuted(true);
+    else setMuted(false);
+  };
+
+  const toggleMute = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.muted = !el.muted;
+    setMuted(el.muted);
+  };
+
+  const changeRate = (r) => {
+    const el = videoRef.current;
+    setRate(r);
+    if (el) el.playbackRate = r;
+  };
+
+  const requestFS = () => {
+    const el = videoRef.current;
+    el && el.requestFullscreen && el.requestFullscreen();
+  };
+
+  // Navegación de cola con transición
+  const safeSwitch = async (nextIdx) => {
+    if (!queue.length || switchingRef.current) return;
+    switchingRef.current = true;
+    setIsTransitioning(true);
+    await new Promise((r) => setTimeout(r, 220)); // breve fade-out
+    setIdx((nextIdx + queue.length) % queue.length);
+    await new Promise((r) => setTimeout(r, 220)); // breve fade-in
+    setIsTransitioning(false);
+    switchingRef.current = false;
+  };
+
+  const next = () => safeSwitch(idx + 1);
+  const prev = () => safeSwitch(idx - 1);
+
+  // Atajos de teclado
+  useEffect(() => {
+    const h = (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target?.tagName)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowRight') seekBy(5);
+      else if (e.key === 'ArrowLeft') seekBy(-5);
+      else if (e.key === 'ArrowUp') setVol(volume + 0.05);
+      else if (e.key === 'ArrowDown') setVol(volume - 0.05);
+      else if (e.key === 'm' || e.key === 'M') toggleMute();
+      else if (e.key === 'f' || e.key === 'F') requestFS();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [volume]);
+
+  const prettyTitle = useMemo(() => current?.title || '—', [current]);
+  const pct = progress.dur ? (progress.cur / progress.dur) * 100 : 0;
+  const pctBuf = progress.dur ? (progress.buf / progress.dur) * 100 : 0;
 
   return (
-    <div className="branch-root">
-      <div className="branch-card">
-        <header className="branch-header">
-          <h1 className="branch-title">{branchName}</h1>
-          <div className="branch-sub">
-            Reproduciendo: <strong>{title}</strong>
-          </div>
-        </header>
+    <div className="tv-root">
+      <header className="tv-header">
+        <div className="brand">
+          <span className="dot" /> {branchName}
+        </div>
+        <div className="now">
+          <span className="label">Reproduciendo</span>
+          <strong className="title" title={prettyTitle}>{prettyTitle}</strong>
+        </div>
+        <div className="clock">{new Date().toLocaleTimeString()}</div>
+      </header>
 
-        <div className={`video-shell ${transitioning ? 'is-transitioning' : ''}`}>
-          {/* Fade cinematográfico */}
-          <div className={`fade-layer ${fading ? 'fade-in' : 'fade-out'}`} />
-
-          {/* Barras letterbox + zoom durante la transición */}
-          <div className="bars" aria-hidden="true" />
-
+      <main className="tv-stage">
+        <div className={`tv-video-shell ${isTransitioning ? 'is-transitioning' : ''}`}>
           <video
-            id="branch-video"
             ref={videoRef}
-            // ⬇⬇⬇  SIN UI nativa del video
-            controls={false}
+            className="tv-video"
+            preload="auto"
             playsInline
-            disablePictureInPicture
-            controlsList="nodownload noplaybackrate nofullscreen noremoteplayback"
-            onContextMenu={(e) => e.preventDefault()}
-            // eventos
+            onLoadedMetadata={onLoadedMetadata}
+            onTimeUpdate={onTimeUpdate}
+            onWaiting={onWaiting}
+            onPlaying={onPlaying}
             onEnded={onEnded}
-            onError={onError}
           />
-          {needsClickForSound && (
-            <button className="sound-cta" onClick={enableSound} title="Activar sonido">
-              🔊 Tocar para activar sonido
-            </button>
-          )}
+          {isLoading && <div className="spinner" />}
+          {!!message && <div className="info-msg">{message}</div>}
         </div>
 
-        <div className="controls">
-          <button onClick={prev} title="Anterior">⏮️ Anterior</button>
-          <button onClick={() => videoRef.current?.play()} title="Play">▶️ Play</button>
-          <button onClick={() => videoRef.current?.pause()} title="Pausa">⏸️ Pausa</button>
-          <button onClick={next} title="Siguiente">⏭️ Siguiente</button>
-          <button
-            className="is-muted"
-            onClick={() => {
-              const v = videoRef.current;
-              if (!v) return;
-              v.muted = !v.muted;
-            }}
-            title="Mute/Unmute"
-          >
-            🔊 / 🔇
-          </button>
-          <button
-            className="is-cta"
-            onClick={() => videoRef.current?.requestFullscreen?.()}
-            title="Pantalla completa"
-          >
-            ⛶ Pantalla completa
-          </button>
-        </div>
-
-        <div className="queue">
-          {videos.length === 0 ? (
-            <div className="notice">Sin videos en cola.</div>
-          ) : (
-            <ul>
-              {videos.map((v, i) => (
+        <aside className="tv-rail">
+          <div className="rail-title">En cola</div>
+          <ul className="rail-list">
+            {queue.length === 0 ? (
+              <li className="empty">Sin videos asignados</li>
+            ) : (
+              queue.map((v, i) => (
                 <li
-                  key={v.id ?? `i${i}`}
-                  className={i === index ? 'playing' : ''}
+                  key={v.id || i}
+                  className={i === idx ? 'is-active' : ''}
                   onClick={() => safeSwitch(i)}
+                  title={v.title}
                 >
-                  {v.title}
+                  <div className="pill">{i === idx ? '▶' : i + 1}</div>
+                  <span className="text">{v.title}</span>
                 </li>
-              ))}
-            </ul>
-          )}
+              ))
+            )}
+          </ul>
+        </aside>
+      </main>
+
+      <footer className="tv-controls">
+        <div className="left">
+          <button className="btn" onClick={prev} title="Anterior">⏮</button>
+          <button className="btn primary" onClick={togglePlay} title="Play/Pause">
+            {playing ? '⏸' : '▶'}
+          </button>
+          <button className="btn" onClick={next} title="Siguiente">⏭</button>
         </div>
 
-        <footer className="branch-foot">
-          <strong>URL:</strong> {resolvedSrc || '—'}
-          {message ? <span style={{ marginInlineStart: 10, color: '#fca5a5' }}>• {message}</span> : null}
-        </footer>
-      </div>
+        <div className="center">
+          <div className="time">{fmtTime(progress.cur)}</div>
+          <div className="bar" onClick={setProgressFromClick}>
+            <div className="buffer" style={{ width: `${pctBuf}%` }} />
+            <div className="progress" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="time">{fmtTime(progress.dur)}</div>
+        </div>
+
+        <div className="right">
+          <button className="btn" onClick={toggleMute} title="Mute">
+            {muted ? '🔇' : '🔊'}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(e) => setVol(parseFloat(e.target.value))}
+            className="vol"
+            title="Volumen"
+          />
+          <select className="rate" value={rate} onChange={(e) => changeRate(parseFloat(e.target.value))} title="Velocidad">
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1">1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+          <button className="btn" onClick={requestFS} title="Pantalla completa">⛶</button>
+        </div>
+      </footer>
     </div>
   );
 }

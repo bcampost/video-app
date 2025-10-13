@@ -1,132 +1,100 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import http from '../api/http';
-import '../styles/QueuePanel.css';
-import { forwardRef, useImperativeHandle } from 'react';
 
+const REFRESH_MS = 4000;
 
-function labelFrom(item) {
-  if (item == null) return '';
-  if (typeof item === 'string' || typeof item === 'number') return String(item);
-  if (Array.isArray(item)) return item.map(labelFrom).join(', ');
-  if (typeof item === 'object') {
-    return (
-      item.title ??
-      item.name ??
-      item.filename ??
-      item.file?.name ??
-      String(item.id ?? '')
-    );
-  }
-  return String(item);
-}
+// Normaliza axios: {data:[...]} o {data:{data:[...]}}
+const normalize = (res) => {
+  const p = res?.data;
+  if (Array.isArray(p)) return p;
+  if (Array.isArray(p?.data)) return p.data;
+  return [];
+};
 
-const POLL_MS = 20000;
-
-export default function QueuePanel({ reloadRef }) {
-  const [status, setStatus] = useState([]);
-  const [error, setError] = useState(null);
+export default function QueuePanel() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
   const timerRef = useRef(null);
-  const inFlight = useRef(null);
 
-  const fetchStatus = async (signal) => {
+  const load = async (silent = false) => {
     try {
-      const { data } = await http.get('/branches/queue-status', { signal });
-      setStatus(Array.isArray(data) ? data : []);
-      setError(null);
-    } catch (err) {
-      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
-      console.error('[QueuePanel] error:', err);
-      setError('No se pudo cargar la información de las sucursales.');
+      if (!silent) setLoading(true);
+      const res = await http.get('/branches/queue-status');
+      setRows(normalize(res));
+    } catch (e) {
+      console.error('[QueuePanel] load', e);
+      setRows([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (typeof reloadRef === 'function') {
-    reloadRef(() => fetchStatus());
-  }
+  useEffect(() => {
+    load();
+    // auto refresh
+    timerRef.current = setInterval(() => load(true), REFRESH_MS);
 
-useEffect(() => {
-  const fetchStatus = async (signal) => {
-    try {
-      const { data } = await http.get('/branches/queue-status', { signal });
-      setStatus(Array.isArray(data) ? data : []);
-      setError(null);
-    } catch (err) {
-      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
-      console.error('[QueuePanel] error:', err);
-      setError('No se pudo cargar la información de las sucursales.');
-    }
-  };
+    // evento manual (por ej. al guardar asignación)
+    const onChanged = () => load(true);
+    window.addEventListener('queue:changed', onChanged);
 
-  const schedule = () => {
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(tick, POLL_MS);
-  };
-
-  const tick = async () => {
-    if (document.hidden || !navigator.onLine) {
-      schedule();
-      return;
-    }
-    inFlight.current?.abort?.();
-    const controller = new AbortController();
-    inFlight.current = controller;
-    await fetchStatus(controller.signal);
-    schedule();
-  };
-
-  const onVisible = () => { if (!document.hidden) tick(); };
-  const onOnline = () => tick();
-
-  document.addEventListener('visibilitychange', onVisible);
-  window.addEventListener('focus', onVisible);
-  window.addEventListener('online', onOnline);
-
-  // ✅ Escucha el evento personalizado para forzar recarga
-  window.addEventListener('queue-status-refresh', tick);
-
-  tick(); // Primera carga
-
-  return () => {
-    document.removeEventListener('visibilitychange', onVisible);
-    window.removeEventListener('focus', onVisible);
-    window.removeEventListener('online', onOnline);
-    window.removeEventListener('queue-status-refresh', tick);
-    clearTimeout(timerRef.current);
-    inFlight.current?.abort?.();
-  };
-}, []);
-
+    return () => {
+      clearInterval(timerRef.current);
+      window.removeEventListener('queue:changed', onChanged);
+    };
+  }, []);
 
   return (
-    <div className="queue-panel">
-      <h3>📡 En cola por sucursal</h3>
-      {error && <p className="error">{error}</p>}
+    <aside className="queue-panel-rt">
+      <div className="qph">
+        <span>📌 En cola por sucursal</span>
+        <button className="qp-refresh" title="Actualizar" onClick={() => load()}>
+          ↻
+        </button>
+      </div>
 
-      {status.map((branchData, index) => {
-        const { branch, now_playing, queue } = branchData;
+      {loading && rows.length === 0 ? (
+        <div className="qp-empty">Cargando…</div>
+      ) : rows.length === 0 ? (
+        <div className="qp-empty">No hay información.</div>
+      ) : (
+        <div className="qp-list">
+          {rows.map((r) => {
+            const playing = r.now_playing?.title || '—';
+            const inQueue = Array.isArray(r.queue) ? r.queue.map((q) => q.title).join(' • ') : '—';
 
-        return (
-          <div key={index} className="branch-status">
-            <h4>📍 {labelFrom(branch)}</h4>
+            return (
+              <div key={r.branch.id} className="qp-item">
+                <div className="qp-branch">
+                  {r.branch.name} <span className="qp-code">({r.branch.code})</span>
+                </div>
+                <div className="qp-row">
+                  <span className="qp-label">Reproduciendo:</span>
+                  <span className="qp-value">{playing}</span>
+                </div>
+                <div className="qp-row">
+                  <span className="qp-label">En cola:</span>
+                  <span className="qp-value">{inQueue || '—'}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-            <p>
-              <strong>Reproduciendo:</strong>{' '}
-              {now_playing ? labelFrom(now_playing) : 'N/A'}
-            </p>
-
-            <p><strong>En cola:</strong></p>
-            {Array.isArray(queue) && queue.length > 0 ? (
-              <ul className="queue-list">
-                {queue.map((v) => (
-                  <li key={v.id ?? labelFrom(v)}>{labelFrom(v)}</li>
-                ))}
-              </ul>
-            ) : (
-              <em>(sin videos en cola)</em>
-            )}
-          </div>
-        );
-      })}
-    </div>
+      <style>{`
+        .queue-panel-rt { height: 100%; background: var(--panel, #15232f); border-left: 1px solid rgba(255,255,255,.06); padding: 12px; overflow:auto; }
+        .qph { display:flex; align-items:center; justify-content:space-between; font-weight:700; margin-bottom:8px; }
+        .qp-refresh { border:0; background:#223346; color:#cfe3ff; padding:6px 8px; border-radius:8px; cursor:pointer; }
+        .qp-empty { color:#9fb4c3; padding:8px; }
+        .qp-list { display:grid; gap:10px; }
+        .qp-item { background:#0f1a23; border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:10px; }
+        .qp-branch { font-weight:600; margin-bottom:6px; }
+        .qp-code { opacity:.7; font-weight:400; }
+        .qp-row { display:flex; gap:6px; margin:2px 0; line-height:1.4; }
+        .qp-label { color:#9fb4c3; min-width:110px; }
+        .qp-value { color:#e8f0f7; flex:1; }
+      `}</style>
+    </aside>
   );
 }

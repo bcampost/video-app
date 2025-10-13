@@ -8,6 +8,8 @@ use App\Models\BranchPlayback;
 use App\Models\BranchQueueItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+
 
 class BranchPlaybackController extends Controller
 {
@@ -24,30 +26,29 @@ class BranchPlaybackController extends Controller
             ])->get();
 
             if ($playbacks->isEmpty()) {
-                // Si no hay playbacks, devolvemos las sucursales igual
                 $branches = Branch::select('id', 'name', 'code')->get();
                 return response()->json($branches->map(fn($b) => [
-                    'branch' => $b,
+                    'branch'      => $b,
                     'now_playing' => null,
-                    'queue' => [],
+                    'queue'       => [],
                 ]));
             }
 
             $response = $playbacks->map(function ($pb) {
                 return [
                     'branch' => [
-                        'id' => $pb->branch->id ?? null,
+                        'id'   => $pb->branch->id ?? null,
                         'name' => $pb->branch->name ?? 'Sin nombre',
                         'code' => $pb->branch->code ?? 'N/A',
                     ],
                     'now_playing' => $pb->nowVideo ? [
-                        'id' => $pb->nowVideo->id,
+                        'id'    => $pb->nowVideo->id,
                         'title' => $pb->nowVideo->title,
                     ] : null,
                     'queue' => $pb->queueItems->map(fn($qi) => [
-                        'id' => $qi->video->id ?? null,
+                        'id'    => $qi->video->id ?? null,
                         'title' => $qi->video->title ?? 'Desconocido',
-                    ]),
+                    ])->values(),
                 ];
             });
 
@@ -73,28 +74,85 @@ class BranchPlaybackController extends Controller
 
             if (!$pb) {
                 return response()->json([
-                    'branch' => $branch,
+                    'branch'      => $branch,
                     'now_playing' => null,
-                    'queue' => [],
+                    'queue'       => [],
                 ]);
             }
 
             return response()->json([
-                'branch' => $branch,
+                'branch'      => $branch,
                 'now_playing' => $pb->nowVideo ? [
-                    'id' => $pb->nowVideo->id,
+                    'id'    => $pb->nowVideo->id,
                     'title' => $pb->nowVideo->title,
                 ] : null,
                 'queue' => $pb->queueItems->map(fn($qi) => [
-                    'id' => $qi->video->id ?? null,
+                    'id'    => $qi->video->id ?? null,
                     'title' => $qi->video->title ?? 'Desconocido',
-                ]),
+                ])->values(),
             ]);
         } catch (\Throwable $e) {
             Log::error('Error en getQueueStatusByCode: ' . $e->getMessage());
             return response()->json(['error' => 'Error interno del servidor'], 500);
         }
     }
+
+    
+
+
+    /**
+     * NUEVO: Cola reproducible por código (lo que consume tu BranchView.jsx)
+     * GET /api/branch/{code}/videos
+     * Respuesta: { branch:{id,name,code}, videos:[{id,title,filename|file|path|url}] }
+     */
+public function videosByCode(string $code)
+{
+    // 1) Sucursal por código
+    $branch = Branch::where('code', $code)->firstOrFail();
+
+    // 2) Columnas disponibles en la tabla videos (evita 1054)
+    $cols = ['videos.id', 'videos.title'];
+    foreach (['filename', 'path', 'file_path', 'url'] as $c) {
+        if (Schema::hasColumn('videos', $c)) {
+            $cols[] = "videos.$c";
+        }
+    }
+
+    // 3) Traemos por la relación pivot (branch_video.position ASC)
+    $videos = $branch->videos()
+        ->orderBy('branch_video.position', 'asc')
+        ->get($cols);
+
+    // 4) Normalización compatible con tu BranchView.jsx
+    $list = $videos->map(function ($v) {
+        // Detecta qué campo de archivo existe
+        $fileLike = $v->filename
+            ?? $v->file_path
+            ?? $v->path
+            ?? null;
+
+        return [
+            'id'       => $v->id,
+            'title'    => $v->title,
+            // Tu BranchView acepta cualquiera de estos:
+            'filename' => $fileLike,
+            'file'     => $v->file_path ?? null,
+            'path'     => $v->path ?? null,
+            'url'      => $v->url ?? null,
+        ];
+    })->values();
+
+    return response()->json([
+        'branch' => [
+            'id'   => $branch->id,
+            'name' => $branch->name,
+            'code' => $branch->code,
+        ],
+        'videos' => $list,
+    ]);
+}
+
+
 
     /**
      * Admin: setea el video actual y la cola
@@ -103,15 +161,15 @@ class BranchPlaybackController extends Controller
     {
         $request->validate([
             'now_video_id' => 'nullable|exists:videos,id',
-            'queue' => 'array',
-            'queue.*' => 'exists:videos,id',
+            'queue'        => 'array',
+            'queue.*'      => 'exists:videos,id',
         ]);
 
         $branch = Branch::findOrFail($branch_id);
         $pb = BranchPlayback::firstOrCreate(['branch_id' => $branch->id]);
 
         $pb->now_video_id = $request->input('now_video_id');
-        $pb->started_at = now();
+        $pb->started_at   = now();
         $pb->save();
 
         BranchQueueItem::where('branch_playback_id', $pb->id)->delete();
@@ -119,9 +177,9 @@ class BranchPlaybackController extends Controller
         foreach ($request->input('queue', []) as $index => $video_id) {
             BranchQueueItem::create([
                 'branch_playback_id' => $pb->id,
-                'video_id' => $video_id,
-                'order' => $index + 1,
-                'added_at' => now(),
+                'video_id'           => $video_id,
+                'order'              => $index + 1,
+                'added_at'           => now(),
             ]);
         }
 
@@ -144,7 +202,7 @@ class BranchPlaybackController extends Controller
         }
 
         $pb->now_video_id = $nextItem->video_id;
-        $pb->started_at = now();
+        $pb->started_at   = now();
         $pb->save();
 
         $nextItem->delete();
@@ -159,4 +217,24 @@ class BranchPlaybackController extends Controller
 
         return response()->json(['message' => 'Advanced to next video']);
     }
+
+    public function reportNowPlayingByCode(Request $request, string $code)
+    {
+        $data = $request->validate([
+            'video_id' => ['required','integer','exists:videos,id'],
+            // opcional: 'position' => ['nullable','numeric'],
+        ]);
+
+        $branch = Branch::where('code', $code)->firstOrFail();
+        $pb = BranchPlayback::firstOrCreate(['branch_id' => $branch->id]);
+
+        $pb->now_video_id = $data['video_id'];
+        $pb->started_at   = now();
+        $pb->save();
+
+        return response()->json(['ok' => true]);
+    }
+
+
+
 }
