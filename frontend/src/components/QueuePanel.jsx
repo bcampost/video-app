@@ -1,16 +1,14 @@
-// src/components/QueuePanel.jsx
-import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import React, { useEffect, useRef, useState } from 'react';
+import http from '../api/http';
 import '../styles/QueuePanel.css';
+import { forwardRef, useImperativeHandle } from 'react';
 
-// Etiqueta legible para cualquier item de video/cola
+
 function labelFrom(item) {
   if (item == null) return '';
   if (typeof item === 'string' || typeof item === 'number') return String(item);
   if (Array.isArray(item)) return item.map(labelFrom).join(', ');
   if (typeof item === 'object') {
-    // casos anidados comunes
-    if (item.video) return labelFrom(item.video);
     return (
       item.title ??
       item.name ??
@@ -22,65 +20,105 @@ function labelFrom(item) {
   return String(item);
 }
 
-export default function QueuePanel() {
+const POLL_MS = 20000;
+
+export default function QueuePanel({ reloadRef }) {
   const [status, setStatus] = useState([]);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const timerRef = useRef(null);
+  const inFlight = useRef(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const fetchStatus = async (signal) => {
+    try {
+      const { data } = await http.get('/branches/queue-status', { signal });
+      setStatus(Array.isArray(data) ? data : []);
+      setError(null);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+      console.error('[QueuePanel] error:', err);
+      setError('No se pudo cargar la información de las sucursales.');
+    }
+  };
 
-    const fetchStatus = async () => {
-      try {
-        const token = localStorage.getItem('auth_token');
-        const { data } = await axios.get(
-          'http://127.0.0.1:8000/api/branches/queue-status',
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!mounted) return;
-        setStatus(Array.isArray(data) ? data : []);
-        setError(null);
-      } catch (err) {
-        if (!mounted) return;
-        console.error('Error al obtener cola de videos:', err);
-        setError('No se pudo cargar la información de las sucursales.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
+  if (typeof reloadRef === 'function') {
+    reloadRef(() => fetchStatus());
+  }
 
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 10000); // cada 10s
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+useEffect(() => {
+  const fetchStatus = async (signal) => {
+    try {
+      const { data } = await http.get('/branches/queue-status', { signal });
+      setStatus(Array.isArray(data) ? data : []);
+      setError(null);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+      console.error('[QueuePanel] error:', err);
+      setError('No se pudo cargar la información de las sucursales.');
+    }
+  };
+
+  const schedule = () => {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(tick, POLL_MS);
+  };
+
+  const tick = async () => {
+    if (document.hidden || !navigator.onLine) {
+      schedule();
+      return;
+    }
+    inFlight.current?.abort?.();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    await fetchStatus(controller.signal);
+    schedule();
+  };
+
+  const onVisible = () => { if (!document.hidden) tick(); };
+  const onOnline = () => tick();
+
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onVisible);
+  window.addEventListener('online', onOnline);
+
+  // ✅ Escucha el evento personalizado para forzar recarga
+  window.addEventListener('queue-status-refresh', tick);
+
+  tick(); // Primera carga
+
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', onVisible);
+    window.removeEventListener('online', onOnline);
+    window.removeEventListener('queue-status-refresh', tick);
+    clearTimeout(timerRef.current);
+    inFlight.current?.abort?.();
+  };
+}, []);
+
 
   return (
     <div className="queue-panel">
       <h3>📡 En cola por sucursal</h3>
-
-      {loading && <p className="muted">Cargando…</p>}
       {error && <p className="error">{error}</p>}
 
-      {status.map((branch, index) => {
-        const key =
-          branch.id ?? branch.code ?? branch.branch ?? `branch-${index}`;
+      {status.map((branchData, index) => {
+        const { branch, now_playing, queue } = branchData;
+
         return (
-          <div key={key} className="branch-status">
-            <h4>📍 {branch.branch ?? branch.name ?? branch.code ?? 'Sucursal'}</h4>
+          <div key={index} className="branch-status">
+            <h4>📍 {labelFrom(branch)}</h4>
 
             <p>
               <strong>Reproduciendo:</strong>{' '}
-              {branch.nowPlaying ? labelFrom(branch.nowPlaying) : 'N/A'}
+              {now_playing ? labelFrom(now_playing) : 'N/A'}
             </p>
 
             <p><strong>En cola:</strong></p>
-            {Array.isArray(branch.queue) && branch.queue.length > 0 ? (
+            {Array.isArray(queue) && queue.length > 0 ? (
               <ul className="queue-list">
-                {branch.queue.map((v, i) => (
-                  <li key={v.id ?? labelFrom(v) ?? i}>{labelFrom(v)}</li>
+                {queue.map((v) => (
+                  <li key={v.id ?? labelFrom(v)}>{labelFrom(v)}</li>
                 ))}
               </ul>
             ) : (

@@ -9,19 +9,13 @@ class Video extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'title',
-        'filename',
-    ];
+    protected $fillable = ['title','url']; // url = path relativo en 'public'
 
-    /**
-     * Relación muchos a muchos con sucursales (branches)
-     */
     public function branches()
-       {
-            return $this->belongsToMany(\App\Models\Branch::class, 'branch_video', 'video_id', 'branch_id')
-                        ->withTimestamps();
-        }
-
-
+    {
+        return $this->belongsToMany(Branch::class, 'branch_video')
+            ->withPivot(['position'])
+            ->withTimestamps()
+            ->orderBy('branch_video.position','asc');
+    }
 }

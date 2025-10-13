@@ -1,138 +1,109 @@
+// src/components/VideoManager.jsx
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import http from '../api/http';
 import { useToast } from '../ui/ToastProvider.jsx';
-import ConfirmDialog from '../ui/ConfirmDialog.jsx';
+import PromptModal from '../ui/PromptModal.jsx';
+import React from 'react';
 
 export default function VideoManager() {
   const [videos, setVideos] = useState([]);
   const [title, setTitle] = useState('');
   const [file, setFile] = useState(null);
-  const [branches, setBranches] = useState([]);
-  const [selectedBranchCode, setSelectedBranchCode] = useState('');
-  const [uploading, setUploading] = useState(false);
 
-  // Estado para el confirm "profesional"
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState(null); // { id, title? }
+  const [openEdit, setOpenEdit] = useState(false);
+  const [editingVideo, setEditingVideo] = useState(null);
 
   const toast = useToast();
 
-  useEffect(() => {
-    fetchVideos();
-    fetchBranches();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const getToken = () => localStorage.getItem('auth_token');
+  useEffect(() => { fetchVideos(); }, []);
 
   const fetchVideos = async () => {
     try {
-      const res = await axios.get('http://127.0.0.1:8000/api/videos', {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      setVideos(res.data || []);
+      const res = await http.get('/videos');
+      const payload = res?.data ?? [];
+      const list = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload.data) ? payload.data : []);
+      setVideos(list);
     } catch (err) {
       console.error('Error al cargar videos:', err);
       toast.error('No se pudieron cargar los videos', { title: 'Error' });
     }
   };
 
-  const fetchBranches = async () => {
-    try {
-      const res = await axios.get('http://127.0.0.1:8000/api/branches', {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      setBranches(res.data || []);
-    } catch (err) {
-      console.error('Error al cargar sucursales:', err);
-      toast.error('No se pudieron cargar las sucursales', { title: 'Error' });
-    }
-  };
-
   const handleUpload = async (e) => {
     e.preventDefault();
+    if (!title || !file) {
+      toast.warn('Completa el título y selecciona un archivo de video.', { title: 'Campos incompletos' });
+      return;
+    }
 
-    if (!title || !file || !selectedBranchCode) {
-      toast.info('Completa todos los campos requeridos', { title: 'Campos incompletos' });
+    const allowed = ['video/mp4','video/webm','video/ogg','video/quicktime','video/x-msvideo','video/x-matroska'];
+    if (!allowed.includes(file.type)) {
+      toast.warn('Solo se permiten MP4, WEBM, OGG, MOV, AVI o MKV.', { title: 'Formato no permitido' });
       return;
     }
 
     const formData = new FormData();
     formData.append('title', title);
-    formData.append('video', file);               // 👈 campo del backend actual
-    formData.append('branch_code', selectedBranchCode);
+    formData.append('video', file);
 
-    setUploading(true);
-    const inProgressId = toast.info('Subiendo video...', { title: 'Subiendo', duration: 60000 });
+    const loadingId = toast.info('Subiendo video...', { title: 'Procesando', duration: 20000 });
 
     try {
-      await axios.post('http://127.0.0.1:8000/api/videos', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${getToken()}`,
-        },
-      });
-
-      toast.remove(inProgressId);
-      toast.success('Video subido correctamente', { title: '¡Listo!' });
-
-      setTitle('');
-      setFile(null);
-      setSelectedBranchCode('');
+      await http.post('/videos', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.remove(loadingId);
+      toast.success('Video subido correctamente', { title: 'Listo' });
+      setTitle(''); setFile(null);
       fetchVideos();
     } catch (err) {
+      toast.remove(loadingId);
       console.error('Error al subir el video:', err);
-      toast.remove(inProgressId);
-      const msg = err?.response?.data?.message || 'No se pudo subir el video';
-      toast.error(msg, { title: 'Error' });
-    } finally {
-      setUploading(false);
+      const data = err?.response?.data;
+      const msg = data?.message || 'Revisa tu conexión o el formato del archivo e inténtalo nuevamente.';
+      toast.error(msg, { title: 'No se pudo subir' });
     }
   };
 
-  // Abre el confirm “pro”
-  const handleAskDelete = (video) => {
-    setPendingDelete({ id: video.id, title: video.title });
-    setConfirmOpen(true);
-  };
-
-  // Ejecuta el delete tras confirmar
-  const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
-    const { id, title } = pendingDelete;
-
-    const inProgressId = toast.info('Eliminando...', { title: 'Procesando', duration: 20000 });
-
+  const handleDelete = async (video) => {
     try {
-      await axios.delete(`http://127.0.0.1:8000/api/videos/${id}`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      toast.remove(inProgressId);
-      toast.success(`"${title || 'Video'}" eliminado`, { title: 'Hecho' });
-      setConfirmOpen(false);
-      setPendingDelete(null);
+      await http.delete(`/videos/${video.id}`);
+      toast.success('Video eliminado', { title: 'Listo' });
       fetchVideos();
     } catch (err) {
       console.error('Error al eliminar video:', err);
-      toast.remove(inProgressId);
-      toast.error('No se pudo eliminar el video', { title: 'Error' });
+      toast.error('No se pudo eliminar. Inténtalo más tarde.', { title: 'Error' });
     }
   };
 
-  const handleCancelDelete = () => {
-    setConfirmOpen(false);
-    setPendingDelete(null);
+  const openRename = (video) => {
+    setEditingVideo(video);
+    setOpenEdit(true);
   };
 
-  const handleEdit = () => {
-    toast.info('Función de edición aún no implementada', { title: 'Próximamente' });
+  const handleModalClose = async (newTitleOrNull) => {
+    setOpenEdit(false);
+    if (!editingVideo) return;
+
+    if (newTitleOrNull && newTitleOrNull !== editingVideo.title) {
+      try {
+        await http.put(`/videos/${editingVideo.id}`, { title: newTitleOrNull });
+        toast.success('Título actualizado', { title: 'Listo' });
+        fetchVideos();
+      } catch (err) {
+        console.error('Error al actualizar título:', err);
+        toast.error('No se pudo actualizar el título', { title: 'Error' });
+      }
+    }
+
+    setEditingVideo(null);
   };
 
   return (
     <div>
       <h2>Gestión de Videos</h2>
 
-      <form onSubmit={handleUpload}>
+      <form onSubmit={handleUpload} style={{ display: 'grid', gap: 10, maxWidth: 560 }}>
         <input
           type="text"
           placeholder="Título del video"
@@ -143,76 +114,61 @@ export default function VideoManager() {
         <input
           type="file"
           accept="video/*"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           required
         />
-        <select
-          value={selectedBranchCode}
-          onChange={(e) => setSelectedBranchCode(e.target.value)}
-          required
-        >
-          <option value="">Selecciona una sucursal</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.code}>
-              {branch.name} ({branch.code})
-            </option>
-          ))}
-        </select>
-        <button type="submit" disabled={uploading}>
-          {uploading ? 'Subiendo…' : 'Subir Video'}
-        </button>
+        <button type="submit">Subir Video</button>
       </form>
+
+      <p style={{ marginTop: 10, color: 'var(--muted, #9fb4c3)' }}>
+        Tip: La asignación de videos a sucursales se realiza en <strong>“Asignar Videos”</strong>.
+      </p>
 
       <h3>📋 Listado de Videos</h3>
 
-      <table>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th>Título</th>
-            <th>Sucursales</th>
-            <th>Acciones</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px' }}>Título</th>
+            <th style={{ textAlign: 'left', padding: '8px 6px' }}>Sucursales</th>
+            <th style={{ padding: '8px 6px' }}>Acciones</th>
           </tr>
         </thead>
         <tbody>
           {videos.length === 0 && (
             <tr>
-              <td colSpan="3">No hay videos subidos.</td>
+              <td colSpan="3" style={{ padding: 10, color: 'var(--muted, #9fb4c3)' }}>
+                No hay videos subidos.
+              </td>
             </tr>
           )}
           {videos.map((video) => (
             <tr key={video.id}>
-              <td>{video.title}</td>
-              <td>
-                {video.branches && video.branches.length > 0
+              <td style={{ padding: '8px 6px' }}>{video.title}</td>
+              <td style={{ padding: '8px 6px' }}>
+                {Array.isArray(video.branches) && video.branches.length > 0
                   ? video.branches.map((b) => `${b.name} (${b.code})`).join(', ')
                   : 'No asignado'}
               </td>
-              <td>
-                <button className="btn-edit" onClick={handleEdit}>
+              <td style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>
+                <button className="btn-edit" onClick={() => openRename(video)} style={{ marginRight: 8 }}>
                   ✏️ Editar
-                </button>{' '}
-                <button className="btn-delete" onClick={() => handleAskDelete(video)}>
-                  🗑️ Eliminar
                 </button>
+                <button className="btn-delete" onClick={() => handleDelete(video)}>🗑️ Eliminar</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {/* Diálogo de confirmación profesional */}
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Eliminar video"
-        message={
-          pendingDelete?.title
-            ? `¿Seguro que deseas eliminar "${pendingDelete.title}"?`
-            : '¿Seguro que deseas eliminar este video?'
-        }
-        confirmText="Eliminar"
+      <PromptModal
+        open={openEdit}
+        title="Editar video"
+        label="Nuevo título del video:"
+        initialValue={editingVideo?.title || ''}
+        confirmText="Guardar"
         cancelText="Cancelar"
-        onConfirm={handleConfirmDelete}
-        onCancel={handleCancelDelete}
+        onClose={handleModalClose}
       />
     </div>
   );

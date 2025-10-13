@@ -1,229 +1,288 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
 import './BranchView.css';
 
-const API = 'http://127.0.0.1:8000/api';
 
-// Heurística para resolver la URL del video según lo que devuelva tu API
-function resolveSrc(v) {
-  // campos comunes
-  if (typeof v === 'string') return v;
-  if (!v || typeof v !== 'object') return '';
 
-  return (
-    v.url ??
-    v.file_url ??
-    v.fileUrl ??
-    v.path ??
-    v.file ??
-    (v.filename ? `http://127.0.0.1:8000/storage/videos/${v.filename}` : '')
-  );
+const BACKEND = 'http://127.0.0.1:8000';
+const API = `${BACKEND}/api`;
+
+function toStorageUrl(input) {
+  if (!input) return '';
+  const s = String(input).trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  let p = s.replace(/^public\//i, '').replace(/^storage\//i, '');
+  if (/^videos\//i.test(p)) return `${BACKEND}/storage/${p}`;
+  return `${BACKEND}/storage/${p}`;
 }
-
-function labelFrom(v) {
-  if (!v) return '';
-  return (
-    v.title ??
-    v.name ??
-    v.filename ??
-    v.file?.name ??
-    String(v.id ?? '')
-  );
+function guessMime(url) {
+  const ext = url.split('?')[0].split('.').pop().toLowerCase();
+  switch (ext) {
+    case 'mp4':  return 'video/mp4';
+    case 'webm': return 'video/webm';
+    case 'ogg':
+    case 'ogv':  return 'video/ogg';
+    case 'mov':  return 'video/quicktime';
+    case 'avi':  return 'video/x-msvideo';
+    case 'mkv':  return 'video/x-matroska';
+    default:     return 'video/mp4';
+  }
 }
 
 export default function BranchView() {
-  const { code } = useParams();               // /sucursal/:code
-  const videoRef = useRef(null);
-  const [branch, setBranch] = useState(null); // {id, name, code}
-  const [rawVideos, setRawVideos] = useState([]);
+  const { code } = useParams();
+
+  const [branchName, setBranchName] = useState(code || 'Sucursal');
+  const [videos, setVideos] = useState([]);
   const [index, setIndex] = useState(0);
-  const [muted, setMuted] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
 
-  const storageKeyVol = `branch-player-volume:${code}`;
-  const storageKeyIdx = `branch-player-index:${code}`;
+  const [resolvedSrc, setResolvedSrc] = useState('');
+  const [fading, setFading] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [needsClickForSound, setNeedsClickForSound] = useState(false);
+  const [message, setMessage] = useState('');
 
-  const playlist = useMemo(() => {
-    return (rawVideos || [])
-      .map(v => ({ id: v.id ?? labelFrom(v), title: labelFrom(v), src: resolveSrc(v) }))
-      .filter(it => !!it.src);
-  }, [rawVideos]);
+  const videoRef = useRef(null);
+  const switchingRef = useRef(false);
+  const errorCountRef = useRef({});
 
+  const queueRef = useRef(null);
+
+
+  const now = videos[index] || null;
+
+  // Carga periódica de cola + nombre de sucursal
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      setLoading(true);
-      setErr(null);
+    let alive = true;
+    async function load() {
       try {
-        // 1) Sucursales (para nombre legible)
-        const bRes = await axios.get(`${API}/branches`);
-        const branches = Array.isArray(bRes.data) ? bRes.data : [];
-        const found = branches.find(b => String(b.code) === String(code));
-        if (mounted) setBranch(found ?? { name: code, code });
-
-        // 2) Playlist asignada a la sucursal (pública)
-        const vRes = await axios.get(`${API}/branch/${encodeURIComponent(code)}/videos`);
-        const list =
-          Array.isArray(vRes.data) ? vRes.data
-          : Array.isArray(vRes.data?.data) ? vRes.data.data
-          : Array.isArray(vRes.data?.videos) ? vRes.data.videos
-          : [];
-        if (mounted) setRawVideos(list);
+        const res = await fetch(`${API}/branch/${code}/videos`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        let list = Array.isArray(data) ? data : (data.videos || []);
+        if (!Array.isArray(list)) list = [];
+        if (alive) {
+          setVideos(list);
+          if (data?.branch?.name) setBranchName(data.branch.name);
+          setIndex((i) => (list.length ? Math.min(i, list.length - 1) : 0));
+        }
       } catch (e) {
-        console.error('BranchView fetch error:', e);
-        if (mounted) setErr('No se pudo cargar la lista de reproducción.');
-      } finally {
-        if (mounted) setLoading(false);
+        console.error('[BranchView] load', e);
       }
-    })();
-    return () => { mounted = false; };
+    }
+    load();
+    const t = setInterval(load, 15000);
+    return () => { alive = false; clearInterval(t); };
   }, [code]);
 
-  // Restaurar volumen e índice
-  useEffect(() => {
-    const v = Number(localStorage.getItem(storageKeyVol));
-    if (videoRef.current && !Number.isNaN(v) && v >= 0 && v <= 1) {
-      videoRef.current.volume = v;
-      if (v > 0) setMuted(false);
+// ⬇⬇⬇ Pon esto DESPUÉS del useEffect que carga la cola
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    try {
+      // Si ya tenemos nombre “humano”, no hacemos nada
+      if (branchName && branchName !== code) return;
+
+      const res = await fetch(`${API}/branches`);
+      if (!res.ok) return;
+      const list = await res.json();
+      if (!alive) return;
+
+      if (Array.isArray(list)) {
+        const b = list.find((x) => String(x.code) === String(code));
+        if (b?.name) setBranchName(b.name);
+      }
+    } catch (e) {
+      // silencioso
     }
-    const savedIdx = Number(localStorage.getItem(storageKeyIdx));
-    if (!Number.isNaN(savedIdx) && savedIdx >= 0) {
-      setIndex(savedIdx);
-    }
-  }, [storageKeyVol, storageKeyIdx]);
+  })();
+  return () => { alive = false; };
+}, [code, branchName]);
 
-  // Guardar índice al cambiar
+
+
+  // Cambio con transición suave (fade + letterbox + zoom)
+  const safeSwitch = async (nextIdx) => {
+    if (!videos.length || switchingRef.current) return;
+    switchingRef.current = true;
+
+    // activa animaciones CSS
+    setTransitioning(true);
+    setFading(true);
+
+    // tiempos suaves y coherentes con CSS (≈ 800ms out + 900ms in)
+    await new Promise((r) => setTimeout(r, 800));
+    setIndex((nextIdx + videos.length) % videos.length);
+    await new Promise((r) => setTimeout(r, 900));
+
+    setFading(false);
+    setTransitioning(false);
+    switchingRef.current = false;
+  };
+  const next = () => safeSwitch(index + 1);
+  const prev = () => safeSwitch(index - 1);
+
+  // Preparar el <video> al cambiar "now"
   useEffect(() => {
-    localStorage.setItem(storageKeyIdx, String(index));
-  }, [index, storageKeyIdx]);
+    setMessage('');
+    setNeedsClickForSound(false);
+    setResolvedSrc('');
 
-  const current = playlist[index];
+    const el = videoRef.current;
+    if (!el || !now) return;
 
-  const next = () => {
-    if (playlist.length === 0) return;
-    setIndex((i) => (i + 1) % playlist.length);
-  };
+    const file = now.filename || now.file || '';
+    const url = toStorageUrl(file);
+    setResolvedSrc(url);
+    if (!url) return;
 
-  const prev = () => {
-    if (playlist.length === 0) return;
-    setIndex((i) => (i - 1 + playlist.length) % playlist.length);
-  };
+    // reiniciar fuentes
+    el.pause();
+    el.removeAttribute('src');
+    while (el.firstChild) el.removeChild(el.firstChild);
 
-  const onEnded = () => {
-    if (playlist.length <= 1) {
-      // si sólo hay uno, vuelve a empezar
-      videoRef.current?.play?.();
+    const source = document.createElement('source');
+    source.src = url;
+    source.type = guessMime(url);
+    el.appendChild(source);
+
+    // preferimos con sonido; si el navegador lo bloquea, caemos a mute + CTA
+    el.playsInline = true;
+    el.preload = 'auto';
+    el.muted = false;
+    el.load();
+
+    el.play()
+      .then(() => setNeedsClickForSound(false))
+      .catch(async () => {
+        try {
+          el.muted = true;
+          await el.play();
+          setNeedsClickForSound(true);
+        } catch {
+          setNeedsClickForSound(true);
+          setMessage('El navegador requiere una interacción para iniciar el video.');
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now?.id]);
+
+  const onEnded = () => { if (videos.length) next(); };
+  const onError = async () => {
+    if (!now) return;
+    const id = now.id ?? `i${index}`;
+    errorCountRef.current[id] = (errorCountRef.current[id] || 0) + 1;
+
+    const allFailed = videos.length &&
+      videos.every((v, i) => (errorCountRef.current[v.id ?? `i${i}`] || 0) >= 2);
+    if (allFailed) {
+      setMessage('No fue posible reproducir ningún video. Verifica que /storage/videos/... sea accesible.');
       return;
     }
+    await new Promise((r) => setTimeout(r, 600));
     next();
   };
 
-  const onError = () => {
-    // si falla, intenta pasar al siguiente para no “congelar” la pantalla
-    console.warn('Error al reproducir, saltando al siguiente');
-    next();
-  };
-
-  const onVolumeChange = () => {
-    const v = videoRef.current?.volume ?? 1;
-    localStorage.setItem(storageKeyVol, String(v));
-    if (v > 0 && muted) setMuted(false);
-  };
-
-  const toggleMute = () => setMuted((m) => !m);
-
-  const toggleFullscreen = () => {
+  const enableSound = async () => {
     const el = videoRef.current;
     if (!el) return;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else el.requestFullscreen?.();
-  };
-
-  const onKeyDown = (e) => {
-    const el = videoRef.current;
-    if (!el) return;
-    const key = e.key.toLowerCase();
-    if (key === 'f') {
-      toggleFullscreen();
-    } else if (key === 'm') {
-      toggleMute();
-    } else if (key === 'arrowright') {
-      el.currentTime = Math.min((el.currentTime ?? 0) + 5, el.duration ?? Infinity);
-    } else if (key === 'arrowleft') {
-      el.currentTime = Math.max((el.currentTime ?? 0) - 5, 0);
-    } else if (key === ' ') {
-      e.preventDefault();
-      if (el.paused) el.play(); else el.pause();
+    try {
+      el.muted = false;
+      await el.play();
+      setNeedsClickForSound(false);
+      setMessage('');
+    } catch {
+      setMessage('No se pudo activar el sonido automáticamente. Intenta de nuevo.');
     }
   };
 
+  const title = useMemo(() => now?.title || '—', [now]);
+
   return (
-    <div className="branch-view" onKeyDown={onKeyDown} tabIndex={0}>
-      <header className="bv-header">
-        <h1 className="bv-title">Sucursal {branch?.name ?? code}</h1>
-        <div className="bv-subtitle">
-          {current ? <>Reproduciendo: <strong>{current.title}</strong></> : 'Sin videos asignados'}
-        </div>
-      </header>
-
-      <main className="bv-main">
-        {loading ? (
-          <div className="bv-card bv-loading">Cargando…</div>
-        ) : err ? (
-          <div className="bv-card bv-error">{err}</div>
-        ) : playlist.length === 0 ? (
-          <div className="bv-card">No hay videos para esta sucursal.</div>
-        ) : (
-          <div className="player-wrapper">
-            <video
-              key={current?.src}          // reinicia al cambiar de fuente
-              className="player"
-              ref={videoRef}
-              src={current?.src}
-              controls
-              controlsList="nodownload"
-              preload="metadata"
-              playsInline
-              autoPlay
-              muted={muted}
-              onEnded={onEnded}
-              onError={onError}
-              onVolumeChange={onVolumeChange}
-            />
-            <div className="controls">
-              <button className="btn" onClick={prev} title="Anterior">⏮</button>
-              <button className="btn" onClick={() => videoRef.current?.pause?.()} title="Pausar">⏸</button>
-              <button className="btn" onClick={() => videoRef.current?.play?.()} title="Reproducir">▶️</button>
-              <button className="btn" onClick={next} title="Siguiente">⏭</button>
-              <div className="spacer" />
-              <button className="btn" onClick={toggleMute} title={muted ? 'Activar sonido (M)' : 'Silenciar (M)'}>{muted ? '🔇' : '🔊'}</button>
-              <button className="btn" onClick={toggleFullscreen} title="Pantalla completa (F)">⛶</button>
-            </div>
+    <div className="branch-root">
+      <div className="branch-card">
+        <header className="branch-header">
+          <h1 className="branch-title">{branchName}</h1>
+          <div className="branch-sub">
+            Reproduciendo: <strong>{title}</strong>
           </div>
-        )}
+        </header>
 
-        {playlist.length > 0 && (
-          <ul className="playlist">
-            {playlist.map((item, i) => (
-              <li
-                key={item.id ?? i}
-                className={i === index ? 'active' : ''}
-                onClick={() => setIndex(i)}
-                title={item.title}
-              >
-                <span className="dot" />
-                <span className="text">{item.title}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
+        <div className={`video-shell ${transitioning ? 'is-transitioning' : ''}`}>
+          {/* Fade cinematográfico */}
+          <div className={`fade-layer ${fading ? 'fade-in' : 'fade-out'}`} />
 
-      <footer className="bv-footer">
-        <small>Atajos: <kbd>F</kbd> pantalla completa, <kbd>M</kbd> mute, <kbd>←/→</kbd> ±5s, <kbd>Espacio</kbd> play/pausa.</small>
-      </footer>
+          {/* Barras letterbox + zoom durante la transición */}
+          <div className="bars" aria-hidden="true" />
+
+          <video
+            id="branch-video"
+            ref={videoRef}
+            // ⬇⬇⬇  SIN UI nativa del video
+            controls={false}
+            playsInline
+            disablePictureInPicture
+            controlsList="nodownload noplaybackrate nofullscreen noremoteplayback"
+            onContextMenu={(e) => e.preventDefault()}
+            // eventos
+            onEnded={onEnded}
+            onError={onError}
+          />
+          {needsClickForSound && (
+            <button className="sound-cta" onClick={enableSound} title="Activar sonido">
+              🔊 Tocar para activar sonido
+            </button>
+          )}
+        </div>
+
+        <div className="controls">
+          <button onClick={prev} title="Anterior">⏮️ Anterior</button>
+          <button onClick={() => videoRef.current?.play()} title="Play">▶️ Play</button>
+          <button onClick={() => videoRef.current?.pause()} title="Pausa">⏸️ Pausa</button>
+          <button onClick={next} title="Siguiente">⏭️ Siguiente</button>
+          <button
+            className="is-muted"
+            onClick={() => {
+              const v = videoRef.current;
+              if (!v) return;
+              v.muted = !v.muted;
+            }}
+            title="Mute/Unmute"
+          >
+            🔊 / 🔇
+          </button>
+          <button
+            className="is-cta"
+            onClick={() => videoRef.current?.requestFullscreen?.()}
+            title="Pantalla completa"
+          >
+            ⛶ Pantalla completa
+          </button>
+        </div>
+
+        <div className="queue">
+          {videos.length === 0 ? (
+            <div className="notice">Sin videos en cola.</div>
+          ) : (
+            <ul>
+              {videos.map((v, i) => (
+                <li
+                  key={v.id ?? `i${i}`}
+                  className={i === index ? 'playing' : ''}
+                  onClick={() => safeSwitch(i)}
+                >
+                  {v.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <footer className="branch-foot">
+          <strong>URL:</strong> {resolvedSrc || '—'}
+          {message ? <span style={{ marginInlineStart: 10, color: '#fca5a5' }}>• {message}</span> : null}
+        </footer>
+      </div>
     </div>
   );
 }

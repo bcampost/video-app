@@ -3,85 +3,78 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Video;
-use App\Models\Branch;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class VideoController extends Controller
 {
-    /**
-     * Listar todos los videos (con sucursales asociadas)
-     */
     public function index()
     {
-        $videos = Video::with('branches:id,name,code')->get();
-        return response()->json($videos);
+        $videos = Video::with(['branches:id,name,code'])->get();
+
+        return response()->json([
+            'data' => $videos->map(function ($v) {
+                return [
+                    'id'       => $v->id,
+                    'title'    => $v->title,
+                    'url'      => $v->url ? Storage::disk('public')->url($v->url) : null,
+                    'branches' => $v->branches->map(fn($b) => [
+                        'id'=>$b->id,'name'=>$b->name,'code'=>$b->code
+                    ])->values(),
+                ];
+            })->values(),
+        ]);
     }
 
-    /**
-     * Subir y asociar un nuevo video a una sucursal
-     */
     public function store(Request $request)
     {
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'video' => 'required|file|mimes:mp4,avi,mov|max:204800', // 200MB
-            'branch_code' => 'required|string|exists:branches,code',
+        $data = $request->validate([
+            'title' => ['required','string','max:255'],
+            'video' => ['required','file','mimetypes:video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo,video/x-matroska'],
         ]);
 
         $path = $request->file('video')->store('videos', 'public');
 
         $video = Video::create([
-            'title' => $request->input('title'),
-            'filename' => $path,
+            'title' => $data['title'],
+            'url'   => $path, // guardamos path relativo
         ]);
 
-        $branch = Branch::where('code', $request->input('branch_code'))->first();
-        $video->branches()->attach($branch->id);
+        return response()->json([
+            'message' => 'Video subido',
+            'data'    => [
+                'id' => $video->id,
+                'title' => $video->title,
+                'url' => Storage::disk('public')->url($video->url),
+                'branches' => [],
+            ],
+        ], 201);
+    }
+
+    public function update(Request $request, Video $video)
+    {
+        $payload = $request->validate(['title' => ['required','string','max:255']]);
+        $video->update(['title' => $payload['title']]);
 
         return response()->json([
-            'message' => 'Video subido y vinculado con éxito 🎉',
-            'video' => $video,
-            'branch' => $branch
+            'message' => 'Actualizado',
+            'data' => [
+                'id'    => $video->id,
+                'title' => $video->title,
+                'url'   => $video->url ? Storage::disk('public')->url($video->url) : null,
+            ],
         ]);
     }
 
-    /**
-     * Actualizar el título de un video
-     */
-    public function update(Request $request, $id)
+    public function destroy(Video $video)
     {
-        $request->validate([
-            'title' => 'required|string|max:255'
-        ]);
-
-        $video = Video::findOrFail($id);
-        $video->title = $request->title;
-        $video->save();
-
-        return response()->json([
-            'message' => 'Título actualizado',
-            'video' => $video
-        ]);
-    }
-
-    /**
-     * Eliminar un video y su archivo asociado
-     */
-    public function destroy($id)
-    {
-        $video = Video::findOrFail($id);
-
-        // Eliminar archivo del disco si existe
-        if ($video->filename && Storage::disk('public')->exists($video->filename)) {
-            Storage::disk('public')->delete($video->filename);
+        if ($video->url && Storage::disk('public')->exists($video->url)) {
+            Storage::disk('public')->delete($video->url);
         }
-
-        // Desvincular de sucursales y eliminar registro
         $video->branches()->detach();
         $video->delete();
 
-        return response()->json(['message' => 'Video eliminado']);
+        return response()->json(['message' => 'Eliminado']);
     }
 }

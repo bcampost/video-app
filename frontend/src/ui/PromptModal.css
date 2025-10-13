@@ -1,0 +1,98 @@
+/* src/ui/PromptModal.css */
+/* Paleta oscura acorde al resto del panel */
+:root {
+  --pm-bg: #0c1622;
+  --pm-panel: rgba(14, 28, 44, .85);
+  --pm-panel-bd: rgba(255,255,255,.08);
+  --pm-text: #e8f0f7;
+  --pm-muted: #9fb4c3;
+  --pm-accent: #14b8a6;
+  --pm-accent-2: #3b82f6;
+  --pm-danger: #ef4444;
+  --pm-shadow: 0 24px 60px rgba(0,0,0,.55), 0 2px 0 rgba(255,255,255,.04) inset;
+}
+
+.pm-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,.45);
+  display: grid; place-items: center;
+  padding: 24px;
+  animation: pmFadeIn .18s ease-in;
+}
+
+@keyframes pmFadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+.pm-dialog {
+  inline-size: min(520px, 92vw);
+  background: linear-gradient(180deg, rgba(13,25,39,.96), rgba(10,22,36,.94));
+  border: 1px solid var(--pm-panel-bd);
+  border-radius: 16px;
+  color: var(--pm-text);
+  box-shadow: var(--pm-shadow);
+  backdrop-filter: blur(10px) saturate(140%);
+  overflow: clip;
+}
+
+.pm-header {
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.pm-header h3 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: .4px;
+}
+
+.pm-content {
+  padding: 16px 18px 10px;
+}
+.pm-label {
+  display: block;
+  font-size: 13px;
+  color: var(--pm-muted);
+  margin-bottom: 8px;
+}
+.pm-input {
+  width: 100%;
+  color: var(--pm-text);
+  background: rgba(13,25,39,.7);
+  border: 1px solid var(--pm-panel-bd);
+  outline: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pm-input:focus {
+  border-color: rgba(59,130,246,.55);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.16);
+}
+
+.pm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 14px 18px 16px;
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+
+.pm-btn {
+  appearance: none;
+  border: 1px solid var(--pm-panel-bd);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: var(--pm-text);
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(20,33,50,.78), rgba(16,34,51,.7));
+  transition: transform .08s ease, border-color .15s ease, background .15s ease;
+}
+.pm-btn:hover { transform: translateY(-1px); }
+
+.pm-btn.pm-ghost {
+  background: transparent;
+}
+.pm-btn.pm-primary {
+  border-color: rgba(16,185,129,.45);
+  background: linear-gradient(180deg, rgba(4,120,87,.85), rgba(5,104,76,.8));
+  color: #ecfeff;
+}

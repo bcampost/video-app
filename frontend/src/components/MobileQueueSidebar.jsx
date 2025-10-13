@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import QueuePanel from './QueuePanel';
 import '../styles/MobileQueueSidebar.css';
 
+
 export default function MobileQueueSidebar() {
   const [open, setOpen] = useState(false);
   const lastFocusedRef = useRef(null);

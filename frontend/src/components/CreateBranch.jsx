@@ -1,31 +1,34 @@
+// src/components/CreateBranch.jsx
 import { useState } from 'react';
-import axios from 'axios';
+import http from '../api/http';
 
-function CreateBranch() {
+export default function CreateBranch({ onCreated }) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
-  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!name || !code) return;
+
+    setSaving(true);
     try {
-      await axios.post('http://127.0.0.1:8000/api/branches', {
-        name,
-        code
-      });
-      setMessage('Sucursal creada correctamente');
+      await http.post('/branches', { name, code });
       setName('');
       setCode('');
+      onCreated?.();
     } catch (err) {
-      setMessage('Error al crear la sucursal');
-      console.error(err);
+      console.error('[CreateBranch] error:', err);
+      alert('No se pudo crear la sucursal');
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div>
-      <h2>Crear sucursal</h2>
-      <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} style={{ marginTop: 16, marginBottom: 24 }}>
+      <h3>➕ Crear sucursal</h3>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <input
           type="text"
           placeholder="Nombre"
@@ -35,16 +38,15 @@ function CreateBranch() {
         />
         <input
           type="text"
-          placeholder="Código (ej. SCL01)"
+          placeholder="Código (ej. LI-01)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           required
         />
-        <button type="submit">Crear</button>
-      </form>
-      {message && <p>{message}</p>}
-    </div>
+        <button type="submit" disabled={saving}>
+          {saving ? 'Guardando…' : 'Guardar'}
+        </button>
+      </div>
+    </form>
   );
 }
-
-export default CreateBranch;

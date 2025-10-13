@@ -1,11 +1,16 @@
 // src/App.jsx
-import { useEffect, useState, Suspense, lazy } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import './App.css';
-import axios from 'axios';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { applyTheme } from './utils/theme';
 import ErrorBoundary from './ui/ErrorBoundary.jsx';
+import http from './api/http';
 
-// Lazy de vistas internas del admin (NO BranchView aquí)
+// Toast global
+import Toast from './components/Toast';
+import './styles/Toast.css';
+
+// Lazy load de módulos del panel
 const Login = lazy(() => import('./components/Login'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
 const VideoManager = lazy(() => import('./components/VideoManager'));
@@ -15,11 +20,16 @@ const VideoList = lazy(() => import('./components/VideoList'));
 const QueuePanel = lazy(() => import('./components/QueuePanel'));
 const MobileQueueSidebar = lazy(() => import('./components/MobileQueueSidebar'));
 
+function RequireAuth({ user }) {
+  return user ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
 function AdminLayout({ user, view, setView, theme, toggleTheme, isMobile, handleLogout }) {
   const showQueue = true;
 
   return (
     <div className="app-container" data-theme={theme}>
+      {/* Sidebar */}
       <ErrorBoundary>
         <Suspense fallback={null}>
           <Sidebar
@@ -33,18 +43,20 @@ function AdminLayout({ user, view, setView, theme, toggleTheme, isMobile, handle
         </Suspense>
       </ErrorBoundary>
 
+      {/* Drawer móvil con la cola */}
       <ErrorBoundary>
         <Suspense fallback={null}>
           <MobileQueueSidebar />
         </Suspense>
       </ErrorBoundary>
 
+      {/* Contenido principal */}
       <div className={`main-content-wrapper ${!isMobile && showQueue ? 'with-queue' : ''}`}>
         <div className="top-bar">
           <h1 className="panel-title">🎬 Panel de Administración</h1>
         </div>
 
-        <p>Bienvenido, {user.name}</p>
+        <p>Bienvenido, {user.email}</p>
         <hr />
 
         <div className="content-container">
@@ -59,6 +71,7 @@ function AdminLayout({ user, view, setView, theme, toggleTheme, isMobile, handle
         </div>
       </div>
 
+      {/* Cola de la derecha en desktop */}
       {!isMobile && (
         <div className="queue-panel-wrapper">
           <ErrorBoundary>
@@ -68,6 +81,9 @@ function AdminLayout({ user, view, setView, theme, toggleTheme, isMobile, handle
           </ErrorBoundary>
         </div>
       )}
+
+      {/* Toasts globales */}
+      <Toast />
     </div>
   );
 }
@@ -78,6 +94,7 @@ export default function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // Restaurar sesión y tema
   useEffect(() => {
     const storedUser = localStorage.getItem('auth_user');
     if (storedUser) setUser(JSON.parse(storedUser));
@@ -88,48 +105,58 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // Persistir theme
   useEffect(() => {
     applyTheme(theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => setTheme((p) => (p === 'dark' ? 'light' : 'dark'));
-  const handleLoginSuccess = (userData) => setUser(userData);
 
   const handleLogout = async () => {
     try {
-      const token = localStorage.getItem('auth_token');
-      await axios.post('http://127.0.0.1:8000/api/logout', {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await http.post('/auth/logout'); // endpoint correcto
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+    } finally {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
       setUser(null);
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
+      window.dispatchEvent(new CustomEvent('toast', {
+        detail: { type: 'info', message: 'Sesión cerrada correctamente' },
+      }));
     }
   };
 
-  // App decide login/admin; las rutas viven en main.jsx
-  if (!user) {
-    return (
-      <ErrorBoundary>
-        <Suspense fallback={null}>
-          <Login onLoginSuccess={handleLoginSuccess} />
-        </Suspense>
-      </ErrorBoundary>
-    );
-  }
-
   return (
-    <AdminLayout
-      user={user}
-      view={view}
-      setView={setView}
-      theme={theme}
-      toggleTheme={toggleTheme}
-      isMobile={isMobile}
-      handleLogout={handleLogout}
-    />
+    <ErrorBoundary>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/login" element={<Login onLoginSuccess={setUser} />} />
+          <Route element={<RequireAuth user={user} />}>
+            <Route
+              path="/"
+              element={
+                <AdminLayout
+                  user={user}
+                  view={view}
+                  setView={setView}
+                  theme={theme}
+                  toggleTheme={toggleTheme}
+                  isMobile={isMobile}
+                  handleLogout={handleLogout}
+                />
+              }
+            />
+          </Route>
+
+          {/* Fallback */}
+          <Route
+            path="*"
+            element={user ? <Navigate to="/" replace /> : <Navigate to="/login" replace />}
+          />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

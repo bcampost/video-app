@@ -9,4 +9,5 @@ const axiosInstance = axios.create({
   }
 });
 
-export default axiosInstance;
+// src/api/axiosInstance.js
+export { default } from './http';

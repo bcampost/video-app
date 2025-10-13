@@ -1,62 +1,40 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-
-// Controladores (namespace Api)
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\VideoController;
-use App\Http\Controllers\Api\BranchVideoController;
-use App\Http\Controllers\Api\AssignVideosController;
+use App\Http\Controllers\Api\BranchController;
 
-/*
-|--------------------------------------------------------------------------
-| Rutas Públicas
-|--------------------------------------------------------------------------
-*/
+// Healthcheck
+Route::get('/health', fn () => response()->json(['ok' => true, 'ts' => now()->toIso8601String()]));
 
-// Login
-Route::post('/login', [AuthController::class, 'login'])->name('api.login');
+// Público
+Route::prefix('auth')->group(function () {
+    Route::post('register', [AuthController::class, 'register']);
+    Route::post('login',    [AuthController::class, 'login']);
+});
 
-// Lista de sucursales (pública)
-Route::get('/branches', [BranchController::class, 'index'])->name('api.branches.index');
-
-// Ver videos asignados a una sucursal por CÓDIGO (vista pública/TV)
-Route::get('/branch/{code}/videos', [BranchVideoController::class, 'getVideos'])
-    ->where('code', '.*')
-    ->name('api.branch.videos');
-
-/*
-|--------------------------------------------------------------------------
-| Rutas Protegidas (Sanctum)
-|--------------------------------------------------------------------------
-*/
+// Protegido
 Route::middleware('auth:sanctum')->group(function () {
-    // Auth
-    Route::post('/logout', [AuthController::class, 'logout'])->name('api.logout');
-    Route::get('/user', [AuthController::class, 'userProfile'])->name('api.user');
 
-    // --- Gestión de Sucursales ---
-    Route::post('/branches', [BranchController::class, 'store'])->name('api.branches.store');
-    Route::put('/branches/{id}', [BranchController::class, 'update'])->name('api.branches.update');
-    Route::delete('/branches/{id}', [BranchController::class, 'destroy'])->name('api.branches.destroy');
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-    // --- Gestión de Videos Globales ---
-    Route::get('/videos', [VideoController::class, 'index'])->name('api.videos.index');
-    Route::post('/videos', [VideoController::class, 'store'])->name('api.videos.store');
-    Route::put('/videos/{id}', [VideoController::class, 'update'])->name('api.videos.update');
-    Route::delete('/videos/{id}', [VideoController::class, 'destroy'])->name('api.videos.destroy');
+    // Panel (admin + superadmin)
+    Route::middleware('role:admin,superadmin')->group(function () {
 
-    // --- Asignación de Videos a Sucursales ---
-    // Opción A: endpoint genérico con payload { branch_id | branch_code, video_ids[] }
-    Route::post('/assign-videos', [AssignVideosController::class, 'store'])->name('api.assign-videos');
+        // Videos
+        Route::get   ('/videos',            [VideoController::class, 'index']);
+        Route::post  ('/videos',            [VideoController::class, 'store']);
+        Route::put   ('/videos/{video}',    [VideoController::class, 'update']);
+        Route::delete('/videos/{video}',    [VideoController::class, 'destroy']);
 
-    // Opción B: por ID en URL (compatibilidad con lo que ya tenías)
-    Route::post('/branch/{branch_id}/assign-videos', [BranchVideoController::class, 'assignVideos'])
-        ->whereNumber('branch_id')
-        ->name('api.branch.assign-videos');
+        // Sucursales
+        Route::apiResource('branches', BranchController::class)->only(['index','store','update','destroy']);
+        Route::get('/branches/queue-status', [BranchController::class, 'queueStatus']);
 
-    // Estado/cola por sucursal (para tu panel derecho)
-    Route::get('/branches/queue-status', [BranchVideoController::class, 'getQueueStatus'])
-        ->name('api.branches.queue-status');
+        // 👇 Endpoints para asignar videos a sucursal
+        Route::post  ('/branches/{branch}/videos',           [BranchController::class, 'syncVideos']);   // asignar/sincronizar
+        Route::delete('/branches/{branch}/videos',           [BranchController::class, 'clearVideos']);  // quitar todos
+        Route::delete('/branches/{branch}/videos/{video}',   [BranchController::class, 'detachVideo']);  // quitar uno
+    });
 });

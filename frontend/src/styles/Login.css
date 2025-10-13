@@ -87,3 +87,62 @@
   filter: brightness(0.9);
   transform: scale(1.02);
 }
+
+/* src/styles/Login.css */
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: var(--bg, #1f2a36);
+  color: var(--text, #e4e4e7);
+  padding: 16px;
+}
+
+.login-card {
+  background: var(--card-bg, #273447);
+  padding: 32px;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.login-card h2 {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.login-card label {
+  display: block;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 10px 12px;
+  margin-top: 6px;
+  border: 1px solid var(--input-border, #3b4b5b);
+  border-radius: 4px;
+  background: var(--input-bg, #2e3a4a);
+  color: var(--text, #e4e4e7);
+}
+
+.login-card button {
+  width: 100%;
+  padding: 12px;
+  background: var(--btn-primary, #3f8efc);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 16px;
+}
+
+.login-card button:disabled {
+  background: var(--btn-disabled, #5c7fa1);
+  cursor: not-allowed;
+}

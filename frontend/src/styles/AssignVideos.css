@@ -1,51 +1,168 @@
-.assign-container {
-  padding: 20px;
-  color: #fff;
+/* src/styles/AssignVideos.css */
+.assign {
+  display: block;
 }
 
-.assign-container select {
-  padding: 8px;
-  border-radius: 4px;
-  background-color: #1e1e1e;
-  color: #fff;
-  border: 1px solid #777;
+.assign__header {
+  margin-bottom: 14px;
 }
-
-.assign-container ul {
-  list-style: none;
-  padding: 0;
-  margin-top: 10px;
-}
-
-.assign-container li {
-  margin-bottom: 8px;
-}
-
-.assign-container label {
-  cursor: pointer;
+.assign__title {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+.assign__title h2 {
+  margin: 0;
+}
+.assign__icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.assign__subtitle {
+  margin: 6px 0 0;
+  color: var(--muted, #9fb4c3);
+  font-size: 0.95rem;
 }
 
-.assign-container input[type="checkbox"] {
-  margin-right: 8px;
-  transform: scale(1.2);
+.assign__grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 16px;
 }
 
-.assign-container button {
-  margin-top: 20px;
+/* Cards */
+.card {
+  background: var(--panel, #0f2433);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.card__header h3 {
+  margin: 0;
+}
+.card__header.row {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Toolbar dentro de Videos */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 14px;
-  background-color: #28a745;
-  color: white;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.badge {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* Inputs / Buttons */
+.input-wrap input[type="text"] {
+  background: #0b1b27;
+  border: 1px solid rgba(255,255,255,.12);
+  color: #dfe8ee;
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: none;
+}
+.input-wrap input[type="text"]:focus {
+  border-color: #2ca76f;
+  box-shadow: 0 0 0 2px rgba(44, 167, 111, .25);
+}
+
+.btn {
+  background: #2c7b4f;
   border: none;
-  border-radius: 4px;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
 }
-
-.assign-container button:hover {
-  background-color: #1e7e34;
+.btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.18);
+  color: #dfe8ee;
 }
 
-.assign-container h2, h3 {
-  color: #f0f0f0;
+/* Tablas */
+.table-wrap {
+  max-height: 520px;
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  background: rgba(255,255,255,.06);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.table tbody td {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.table .num {
+  text-align: center;
+  width: 80px;
+}
+.table .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Row states */
+.table tbody tr.is-active {
+  background: rgba(44,167,111,.12);
+}
+.table tbody tr.is-selected {
+  background: rgba(255,255,255,.04);
+}
+
+/* Helpers */
+.muted { color: var(--muted, #9fb4c3); }
+.error { color: #ff6b6b; }
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .assign__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* … (todo lo que ya tienes arriba) … */
+
+.btn.danger {
+  background: #c23b3b;
+  color: #fff;
+}
+.btn.danger:disabled {
+  opacity: .7;
+  cursor: wait;
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import '../styles/Sidebar.css';
-import logoImg from "../assets/media/logo-li.png";
+import logoImg from '../assets/media/logo-li.png';
 import QueuePanel from './QueuePanel';
+
 
 export default function Sidebar({
   setView,
@@ -99,7 +100,6 @@ export default function Sidebar({
         <button className={`nav-button ${view === 'videos' ? 'active' : ''}`} onClick={() => setView('videos')}>📁 Videos</button>
         <button className={`nav-button ${view === 'branches' ? 'active' : ''}`} onClick={() => setView('branches')}>🏢 Sucursales</button>
         <button className={`nav-button ${view === 'assign' ? 'active' : ''}`} onClick={() => setView('assign')}>🔗 Asignar Videos</button>
-        <button className={`nav-button ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>📃 Lista (pública)</button>
       </nav>
       <div className="sidebar-footer">
         <button className="theme-toggle-btn" onClick={toggleTheme}>

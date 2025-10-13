@@ -1,0 +1,100 @@
+/* src/ui/dialog.css */
+:root {
+  --dlg-backdrop: rgba(0, 0, 0, 0.55);
+  --dlg-bg: #0f1a24;
+  --dlg-border: rgba(255, 255, 255, 0.08);
+  --dlg-title: #e8f0f6;
+  --dlg-text: #c6d3dd;
+  --dlg-danger: #c23b3b;
+  --dlg-danger-bg: rgba(194, 59, 59, 0.2);
+}
+
+.dlg-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--dlg-backdrop);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+  animation: fadeIn 120ms ease-out;
+}
+
+.dlg {
+  width: min(520px, 92vw);
+  background: var(--dlg-bg);
+  border: 1px solid var(--dlg-border);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: flyIn 140ms ease-out;
+}
+
+.dlg__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 8px;
+}
+
+.dlg__icon {
+  font-size: 22px;
+}
+
+.dlg__title {
+  margin: 0;
+  color: var(--dlg-title);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dlg__body {
+  padding: 0 20px 10px;
+  color: var(--dlg-text);
+}
+
+.dlg__footer {
+  padding: 14px 20px 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--dlg-border);
+}
+
+/* Tono "danger" */
+.dlg.is-danger .dlg__header {
+  background: var(--dlg-danger-bg);
+  border-bottom: 1px solid var(--dlg-border);
+}
+
+/* Reutiliza tus estilos base de botones si ya existen */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #1d2a36;
+  color: #e9f1f7;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.1); }
+
+.btn.ghost {
+  background: transparent;
+  border-color: var(--dlg-border);
+}
+
+.btn.danger {
+  background: var(--dlg-danger);
+  color: #fff;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+@keyframes flyIn {
+  from { transform: translateY(8px); opacity: .95 }
+  to { transform: translateY(0); opacity: 1 }
+}
