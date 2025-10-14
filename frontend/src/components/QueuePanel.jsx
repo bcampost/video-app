@@ -1,46 +1,67 @@
+// src/components/QueuePanel.jsx
 import { useEffect, useRef, useState } from 'react';
 import http from '../api/http';
 
-const REFRESH_MS = 4000;
+const REFRESH_MS = 5000; // cada 5s
 
-// Normaliza axios: {data:[...]} o {data:{data:[...]}}
-const normalize = (res) => {
-  const p = res?.data;
-  if (Array.isArray(p)) return p;
-  if (Array.isArray(p?.data)) return p.data;
+// Normaliza payloads: {data:[...]} o directamente [...]
+const pickRows = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
   return [];
 };
 
 export default function QueuePanel() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const timerRef = useRef(null);
+  const abortRef = useRef(null); // ← ahora sí existe
 
   const load = async (silent = false) => {
     try {
+      // cancela petición anterior si sigue viva
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = new AbortController();
+
       if (!silent) setLoading(true);
-      const res = await http.get('/branches/queue-status');
-      setRows(normalize(res));
+
+      // usa el endpoint correcto del backend
+      const res = await http.get('/branches/queue-status', {
+        signal: abortRef.current.signal,
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+
+      setRows(pickRows(res.data));
     } catch (e) {
+      // axios usa CanceledError / ERR_CANCELED al abortar: lo ignoramos
+      if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return;
       console.error('[QueuePanel] load', e);
       setRows([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     load();
+
     // auto refresh
     timerRef.current = setInterval(() => load(true), REFRESH_MS);
 
-    // evento manual (por ej. al guardar asignación)
+    // refresca si algo del front avisa que cambió la cola o el now playing
     const onChanged = () => load(true);
     window.addEventListener('queue:changed', onChanged);
+    window.addEventListener('tv:now-playing', onChanged);
 
     return () => {
       clearInterval(timerRef.current);
       window.removeEventListener('queue:changed', onChanged);
+      window.removeEventListener('tv:now-playing', onChanged);
+      if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
@@ -60,8 +81,9 @@ export default function QueuePanel() {
       ) : (
         <div className="qp-list">
           {rows.map((r) => {
-            const playing = r.now_playing?.title || '—';
-            const inQueue = Array.isArray(r.queue) ? r.queue.map((q) => q.title).join(' • ') : '—';
+            // si tu backend no manda "now_playing", tomamos el primero de la cola
+            const playing = r.now_playing?.title || r.queue?.[0]?.title || '—';
+            const inQueue = (r.queue || []).slice(r.now_playing ? 0 : 1).map((q) => q.title);
 
             return (
               <div key={r.branch.id} className="qp-item">
@@ -74,7 +96,7 @@ export default function QueuePanel() {
                 </div>
                 <div className="qp-row">
                   <span className="qp-label">En cola:</span>
-                  <span className="qp-value">{inQueue || '—'}</span>
+                  <span className="qp-value">{inQueue.length ? inQueue.join(' • ') : '—'}</span>
                 </div>
               </div>
             );

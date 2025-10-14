@@ -15,7 +15,7 @@ class BranchController extends Controller
     {
         $branches = Branch::withCount('videos')
             ->orderBy('name')
-            ->get(['id','name','code','playback_key','last_seen_at']);
+            ->get(['id','name','code','login_user','playback_key','last_seen_at']); // << importante: login_user
 
         return response()->json(['data' => $branches]);
     }
@@ -86,11 +86,6 @@ class BranchController extends Controller
         return response()->json(['data' => $data]);
     }
 
-    /**
-     * Sincroniza los videos asignados a una sucursal.
-     * Body: { "video_ids": [1,2,3] }
-     * La posición quedará según el orden del array (1..n).
-     */
     public function syncVideos(Request $request, Branch $branch)
     {
         $data = $request->validate([
@@ -105,7 +100,7 @@ class BranchController extends Controller
             foreach ($ids as $i => $videoId) {
                 $sync[$videoId] = ['position' => $i + 1];
             }
-            $branch->videos()->sync($sync); // quita los que no estén y actualiza posiciones
+            $branch->videos()->sync($sync);
         });
 
         return response()->json([
@@ -117,18 +112,12 @@ class BranchController extends Controller
         ]);
     }
 
-    /**
-     * Quita todos los videos de una sucursal.
-     */
     public function clearVideos(Branch $branch)
     {
         $branch->videos()->detach();
         return response()->noContent(); // 204
     }
 
-    /**
-     * Quita un video específico de la sucursal.
-     */
     public function detachVideo(Branch $branch, Video $video)
     {
         $branch->videos()->detach($video->id);
@@ -137,20 +126,17 @@ class BranchController extends Controller
 
     public function show(Branch $branch)
     {
-        // Traemos la cola ordenada por posición
         $branch->load([
             'videos' => function ($q) {
                 $q->select('videos.id','videos.title','videos.path','videos.file_path','videos.url')
-                ->orderBy('branch_video.position','asc');
+                  ->orderBy('branch_video.position','asc');
             }
         ]);
 
-        // Normalizamos posibles nombres de columna de ruta pública:
         $queue = $branch->videos->map(function ($v) {
             return [
                 'id'    => $v->id,
                 'title' => $v->title,
-                // path puede ser 'url' (ya pública) o un path tipo "videos/archivo.mp4"
                 'url'   => $v->url ?? null,
                 'path'  => $v->path ?? $v->file_path ?? null,
             ];
@@ -166,5 +152,33 @@ class BranchController extends Controller
         ]);
     }
 
+    /**
+     * PUT /api/branches/{branch}/credentials
+     * Body: { "login_user": "usuario", "password": "opcional" }
+     */
+    public function updateCredentials(Request $request, Branch $branch)
+    {
+        $data = $request->validate([
+            'login_user' => [
+                'nullable','string','max:60',
+                Rule::unique('branches','login_user')->ignore($branch->id),
+            ],
+            'password'   => ['nullable','string','min:6'],
+        ]);
 
+        if (array_key_exists('login_user', $data)) {
+            $branch->login_user = $data['login_user']; // puede ser null para quitar usuario
+        }
+
+        if (!empty($data['password'])) {
+            $branch->login_password = bcrypt($data['password']);
+        }
+
+        $branch->save();
+
+        return response()->json([
+            'message' => 'Credenciales actualizadas',
+            'data'    => ['login_user' => $branch->login_user],
+        ]);
+    }
 }

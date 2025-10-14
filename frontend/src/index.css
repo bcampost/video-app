@@ -13,6 +13,26 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+
+:root { --tv-bg:#0d1620; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--tv-bg);
+  overscroll-behavior: none;
+}
+
+/* prevent any horizontal scrollbar / white stripes */
+body, #root {
+  overflow: hidden;         /* <— clave para quitar la franja blanca */
+}
+
+/* optional: nicer font-smoothing on dark bg */
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
 a {
   font-weight: 500;
   color: #646cff;

@@ -218,22 +218,67 @@ public function videosByCode(string $code)
         return response()->json(['message' => 'Advanced to next video']);
     }
 
-    public function reportNowPlayingByCode(Request $request, string $code)
-    {
-        $data = $request->validate([
-            'video_id' => ['required','integer','exists:videos,id'],
-            // opcional: 'position' => ['nullable','numeric'],
-        ]);
+public function reportNowPlaying(Request $request, string $code)
+{
+    $data = $request->validate([
+        'video_id' => 'required|integer|exists:videos,id',
+    ]);
 
+    $branch = Branch::where('code', $code)->firstOrFail();
+    $pb = BranchPlayback::firstOrCreate(['branch_id' => $branch->id]);
+
+    $vid = (int) $data['video_id'];
+
+    // Si el tope de la cola coincide con el que se empezó a reproducir: lo sacamos
+    $head = $pb->queueItems()->orderBy('order')->first();
+    if ($head && (int) $head->video_id === $vid) {
+        $head->delete();
+
+        // Reindexar la cola
+        $pb->queueItems()->orderBy('order')->get()->each(function ($item, $i) {
+            $item->order = $i + 1;
+            $item->save();
+        });
+    } else {
+        // Por si ese video estaba en algún lugar de la cola, lo eliminamos para no duplicar
+        $pb->queueItems()->where('video_id', $vid)->delete();
+    }
+
+    // Actualizar el "now playing" si cambió
+    if ($pb->now_video_id !== $vid) {
+        $pb->now_video_id = $vid;
+        $pb->started_at   = now();
+        $pb->save();
+    }
+
+    // Opcional: marcar que esta sucursal está viva
+    try {
+        $branch->last_seen_at = now();
+        $branch->save();
+    } catch (\Throwable $e) {}
+
+    return response()->json(['ok' => true]);
+}
+
+public function heartbeatByCode(Request $request, string $code)
+{
+    try {
         $branch = Branch::where('code', $code)->firstOrFail();
-        $pb = BranchPlayback::firstOrCreate(['branch_id' => $branch->id]);
 
-        $pb->now_video_id = $data['video_id'];
+        $pb = BranchPlayback::firstOrCreate(['branch_id' => $branch->id]);
+        $videoId = $request->integer('video_id');
+
+        // Marca qué video está sonando y desde cuándo
+        $pb->now_video_id = $videoId ?: null;
         $pb->started_at   = now();
         $pb->save();
 
         return response()->json(['ok' => true]);
+    } catch (\Throwable $e) {
+        Log::error('heartbeatByCode: ' . $e->getMessage());
+        return response()->json(['ok' => false], 500);
     }
+}
 
 
 

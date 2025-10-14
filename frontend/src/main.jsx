@@ -7,10 +7,21 @@ import { DialogProvider } from './ui/DialogProvider.jsx';
 import App from './App.jsx';
 import './index.css';
 
-const BranchView = lazy(() => import('./pages/BranchView.jsx'));
+const BranchView  = lazy(() => import('./pages/BranchView.jsx'));
+const BranchLogin = lazy(() => import('./pages/BranchLogin.jsx')); // ← login simple
 
 const router = createBrowserRouter(
   [
+    // Log-in de sucursal
+    {
+      path: '/sucursal/login',
+      element: (
+        <Suspense fallback={null}>
+          <BranchLogin />
+        </Suspense>
+      ),
+    },
+
     // Vista TV por sucursal
     {
       path: '/sucursal/:code',
@@ -20,6 +31,7 @@ const router = createBrowserRouter(
         </Suspense>
       ),
     },
+
     // Tu app principal (panel)
     { path: '/*', element: <App /> },
 

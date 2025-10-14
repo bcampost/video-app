@@ -40,5 +40,8 @@ class Kernel extends HttpKernel
         'role'       => \App\Http\Middleware\RoleMiddleware::class,
         // Si usas este, mantenlo; si no, puedes quitarlo:
         'superadmin' => \App\Http\Middleware\EnsureSuperAdmin::class,
+        'branch.token' => \App\Http\Middleware\BranchToken::class,
+
+
     ];
 }
