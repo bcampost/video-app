@@ -1,34 +1,14 @@
-/* src/styles/AssignVideos.css */
+/* ====== Variables de layout (ajusta si quieres) ====== */
 .assign {
-  display: block;
+  --video-col: 260px;      /* ancho mín. col. "Video" (sticky) */
+  --branch-col: 260px;     /* ancho mín. por sucursal */
+  --visible-branches: 4;   /* cuántas sucursales visibles a la vez */
 }
 
-.assign__header {
-  margin-bottom: 14px;
-}
-.assign__title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.assign__title h2 {
-  margin: 0;
-}
-.assign__icon {
-  font-size: 26px;
-  line-height: 1;
-}
-.assign__subtitle {
-  margin: 6px 0 0;
-  color: var(--muted, #9fb4c3);
-  font-size: 0.95rem;
-}
-
-.assign__grid {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 16px;
-}
+/* ====== Base ====== */
+.assign__header { margin-bottom: 14px; }
+.assign__title { display: flex; align-items: center; gap: 10px; }
+.assign__subtitle { margin: 6px 0 0; color: var(--muted, #9fb4c3); }
 
 /* Cards */
 .card {
@@ -38,131 +18,87 @@
   overflow: hidden;
 }
 .card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 14px;
   border-bottom: 1px solid rgba(255,255,255,.06);
 }
-.card__header h3 {
-  margin: 0;
-}
-.card__header.row {
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* Toolbar dentro de Videos */
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-}
-.toolbar__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.badge {
-  background: rgba(255,255,255,.08);
-  color: #fff;
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 0.9rem;
-  text-align: center;
-}
+.card__header.row { gap: 10px; flex-wrap: wrap; }
 
 /* Inputs / Buttons */
 .input-wrap input[type="text"] {
   background: #0b1b27;
   border: 1px solid rgba(255,255,255,.12);
   color: #dfe8ee;
-  border-radius: 8px;
-  padding: 8px 10px;
-  outline: none;
+  border-radius: 8px; padding: 8px 10px; outline: none;
 }
 .input-wrap input[type="text"]:focus {
-  border-color: #2ca76f;
-  box-shadow: 0 0 0 2px rgba(44, 167, 111, .25);
+  border-color: #2ca76f; box-shadow: 0 0 0 2px rgba(44,167,111,.25);
 }
+.btn { background: #2c7b4f; border: none; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+.btn.ghost { background: transparent; border: 1px solid rgba(255,255,255,.18); color: #dfe8ee; }
 
-.btn {
-  background: #2c7b4f;
-  border: none;
-  color: #fff;
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.btn:disabled {
-  opacity: .6;
-  cursor: not-allowed;
-}
-.btn.ghost {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,.18);
-  color: #dfe8ee;
-}
-
-/* Tablas */
+/* ====== Tabla Excel ====== */
 .table-wrap {
-  max-height: 520px;
-  overflow: auto;
+  max-height: 70vh;
+  overflow: auto;                                  /* vertical + horizontal */
+  /* <<< Solo 4 sucursales visibles a la vez >>> */
+  max-width: calc(var(--video-col) + (var(--branch-col) * var(--visible-branches)));
 }
 .table {
-  width: 100%;
+  width: max-content;                               /* crece según columnas */
+  min-width: 100%;
   border-collapse: collapse;
 }
 .table thead th {
-  text-align: left;
-  padding: 10px 12px;
+  text-align: left; padding: 10px 12px;
   background: rgba(255,255,255,.06);
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  position: sticky; top: 0; z-index: 3;
+  white-space: nowrap;
 }
 .table tbody td {
-  padding: 10px 12px;
-  border-top: 1px solid rgba(255,255,255,.06);
-}
-.table .num {
-  text-align: center;
-  width: 80px;
-}
-.table .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  padding: 10px 12px; border-top: 1px solid rgba(255,255,255,.06);
+  white-space: nowrap;
 }
 
-/* Row states */
-.table tbody tr.is-active {
-  background: rgba(44,167,111,.12);
-}
-.table tbody tr.is-selected {
-  background: rgba(255,255,255,.04);
+/* Sticky primera col */
+.table thead th.sticky-left,
+.table tbody td.sticky-left {
+  position: sticky; left: 0;
+  background: var(--panel, #0f2433);
+  box-shadow: 1px 0 0 rgba(255,255,255,.06);
+  z-index: 2;
 }
 
-/* Helpers */
-.muted { color: var(--muted, #9fb4c3); }
-.error { color: #ff6b6b; }
+/* Anchos mínimos por columna */
+.table thead th.sticky-left,
+.table tbody td.sticky-left { min-width: var(--video-col); }
+.branch-col { min-width: var(--branch-col); }
 
-/* Responsive */
+/* Header de columna: nombre + badges */
+.th-top { display: flex; flex-direction: column; gap: 6px; }
+.meta { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.badge { display: inline-block; font-size: 12px; line-height: 1;
+  padding: 6px 8px; border-radius: 999px; background: #2ca76f; color: #0a1a12; font-weight: 600; }
+.badge.ghost { background: transparent; color: #dfe8ee; border: 1px solid rgba(255,255,255,.25); }
+.badge.danger { background: #e5484d; color: #190c0d; border: 1px solid rgba(0,0,0,.15); }
+
+/* Checkbox grid */
+.chk { --size: 18px; display: inline-flex; align-items: center; justify-content: center; width: var(--size); height: var(--size); position: relative; }
+.chk input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.chk .box { width: 100%; height: 100%; border: 2px solid rgba(255,255,255,.35); border-radius: 4px; transition: all .15s ease; }
+.chk input:checked + .box { background: #2ca76f; border-color: #2ca76f; box-shadow: inset 0 0 0 3px rgba(255,255,255,.85); }
+.chk.is-loading .box { opacity: .6; background: rgba(255,255,255,.12); }
+
+/* Celdas centradas */
+.cell-center { text-align: center; }
+
+/* Scrollbar un poquito más visible (opcional) */
+.table-wrap::-webkit-scrollbar { height: 10px; }
+.table-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); border-radius: 8px; }
+.table-wrap::-webkit-scrollbar-track { background: rgba(255,255,255,.06); }
+
+/* Responsive (reduce ancho de columnas en pantallas chicas) */
 @media (max-width: 1024px) {
-  .assign__grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* … (todo lo que ya tienes arriba) … */
-
-.btn.danger {
-  background: #c23b3b;
-  color: #fff;
-}
-.btn.danger:disabled {
-  opacity: .7;
-  cursor: wait;
+  .assign { --video-col: 220px; --branch-col: 220px; }
 }

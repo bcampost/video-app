@@ -1,231 +1,337 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import http from '../api/http';
 import { useToast } from '../ui/ToastProvider.jsx';
+
+/**
+ * Grilla tipo Excel:
+ * - Se muestran 4 columnas de sucursales a la vez; si hay más, aparece scroll horizontal.
+ * - Caché local por sucursal para mantener checks si el backend tarda/falla.
+ * - Acciones por sucursal: Todos / Ninguno / Invertir (solo sobre lo filtrado).
+ * - Sin barras superiores ni botones flotantes.
+ */
+
+const CACHE_KEY = 'assign-grid-cache:v1';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return { updatedAt: 0, branches: {} };
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : { updatedAt: 0, branches: {} };
+  } catch { return { updatedAt: 0, branches: {} }; }
+}
+function saveCache(cache) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch {} }
+const isExpired = (ts) => Date.now() - (ts || 0) > CACHE_TTL_MS;
 
 export default function AssignVideos() {
   const toast = useToast();
 
-  // datos
+  // Data
   const [branches, setBranches] = useState([]);
   const [videos, setVideos] = useState([]);
-  const [queueStatus, setQueueStatus] = useState([]); // [{branch:{id,...}, queue:[...]}]
-
-  // ui / selección
-  const [selectedBranchId, setSelectedBranchId] = useState(null);
-  const [selected, setSelected] = useState(new Set()); // ids de videos seleccionados
-  const [filterBranch, setFilterBranch] = useState('');
+  const [queueStatus, setQueueStatus] = useState([]);
   const [filterVideo, setFilterVideo] = useState('');
+  const [isSavingCell, setIsSavingCell] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // normalizador de respuestas {data:[...]} o [...]
-  const normalize = (res) => {
-    if (Array.isArray(res?.data)) return res.data;
-    if (Array.isArray(res?.data?.data)) return res.data.data;
+  // Cache
+  const cacheRef = useRef(loadCache());
+
+  // Normalizador
+  const norm = (res) => {
+    if (Array.isArray(res)) return res;
+    if (!res) return [];
+    const d = res.data ?? res;
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.data)) return d.data;
+    if (Array.isArray(d?.value)) return d.value;
+    if (Array.isArray(d?.data?.data)) return d.data.data;
+    if (Array.isArray(d?.data?.value)) return d.data.value;
     return [];
   };
 
-  // carga inicial
+  // Carga inicial
   useEffect(() => {
     (async () => {
       try {
-        const [brRes, vdRes, qsRes] = await Promise.all([
+        setLoading(true);
+        const [br, vd, qs] = await Promise.all([
           http.get('/branches'),
           http.get('/videos'),
           http.get('/branches/queue-status'),
         ]);
-        setBranches(normalize(brRes));
-        setVideos(normalize(vdRes));
-        setQueueStatus(normalize(qsRes));
+        const branchesR = norm(br);
+        const videosR   = norm(vd);
+        const qsR       = norm(qs);
+
+        setBranches(branchesR);
+        setVideos(videosR);
+
+        let nextQS = qsR;
+        if (!isExpired(cacheRef.current.updatedAt)) {
+          const byId = new Map(qsR.map(r => [r?.branch?.id, r]));
+          branchesR.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, { branch: b, queue: [] }); });
+          nextQS = Array.from(byId.values()).map(item => {
+            const cached = cacheRef.current.branches?.[item?.branch?.id];
+            if (!cached) return item;
+            const set = new Set(cached);
+            return {
+              ...item,
+              queue: Array.from(set).map(id => {
+                const vv = videosR.find(v => v.id === id);
+                return vv ? { id: vv.id, title: vv.title } : { id };
+              })
+            };
+          });
+        }
+        setQueueStatus(nextQS);
       } catch (e) {
-        console.error('[AssignVideos] init load', e);
+        console.error('[AssignVideos] init', e);
         toast.error('No se pudo cargar la información inicial', { title: 'Error' });
+      } finally {
+        setLoading(false);
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // cuando cambie la sucursal seleccionada, hidratar selección desde queue-status
-  useEffect(() => {
-    if (!selectedBranchId) { setSelected(new Set()); return; }
-    const row = queueStatus.find(r => r.branch?.id === selectedBranchId);
-    const ids = new Set((row?.queue || []).map(v => v.id));
-    setSelected(ids);
-  }, [selectedBranchId, queueStatus]);
-
-  // helpers UI
-  const filteredBranches = useMemo(() => {
-    const term = filterBranch.trim().toLowerCase();
-    const list = Array.isArray(branches) ? branches : [];
-    if (!term) return list;
-    return list.filter(b =>
-      (b.name || '').toLowerCase().includes(term) ||
-      (b.code || '').toLowerCase().includes(term)
-    );
-  }, [branches, filterBranch]);
-
-  const filteredVideos = useMemo(() => {
-    const term = filterVideo.trim().toLowerCase();
-    const list = Array.isArray(videos) ? videos : [];
-    if (!term) return list;
-    return list.filter(v => (v.title || '').toLowerCase().includes(term));
-  }, [videos, filterVideo]);
-
-  const assignedCountByBranch = useMemo(() => {
-    const map = new Map();
-    queueStatus.forEach(r => map.set(r.branch?.id, (r.queue || []).length));
-    return map;
+  // Asignados por sucursal
+  const assignedByBranch = useMemo(() => {
+    const m = new Map();
+    for (const row of queueStatus) {
+      const bId = row?.branch?.id;
+      const ids = new Set((row?.queue || []).map(v => v.id));
+      m.set(bId, ids);
+    }
+    return m;
   }, [queueStatus]);
 
-  // acciones de selección
-  const toggleVideo = (id) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-  const selectAll = () => setSelected(new Set(filteredVideos.map(v => v.id)));
-  const clearAll = () => setSelected(new Set());
+  // Filtrado
+  const filteredVideos = useMemo(() => {
+    const t = filterVideo.trim().toLowerCase();
+    if (!t) return videos;
+    return videos.filter(v => (v.title || '').toLowerCase().includes(t));
+  }, [videos, filterVideo]);
+  const filteredIdSet = useMemo(() => new Set(filteredVideos.map(v => v.id)), [filteredVideos]);
 
-  // guardar asignación (ajusta la ruta a tu controlador si usas otra)
-  const saveAssignment = async () => {
-    if (!selectedBranchId) {
-      toast.warn('Selecciona una sucursal primero', { title: 'Falta selección' });
-      return;
-    }
+  // Cache helpers
+  const writeCache = (branchId, idSet) => {
+    const obj = cacheRef.current || { updatedAt: 0, branches: {} };
+    obj.updatedAt = Date.now();
+    (obj.branches ||= {})[branchId] = Array.from(idSet);
+    cacheRef.current = obj;
+    saveCache(obj);
+  };
+
+  const refreshQueueStatus = async () => {
     try {
-      // Si tu endpoint es otro, cámbialo aquí:
-      // Ejemplo 1 (REST): POST /branches/{id}/videos  { video_ids: [...] }
-      // Ejemplo 2 (custom): POST /assign-videos { branch_id, video_ids }
-      await http.post(`/branches/${selectedBranchId}/videos`, {
-        video_ids: Array.from(selected),
-      });
-      toast.success('Asignación guardada', { title: 'Listo' });
-
-      // refrescar queue-status para ver los cambios en el panel y contador
       const qsRes = await http.get('/branches/queue-status');
-      setQueueStatus(normalize(qsRes));
+      const qs = norm(qsRes);
+      const byId = new Map(qs.map(r => [r?.branch?.id, r]));
+      branches.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, { branch: b, queue: [] }); });
+      let next = Array.from(byId.values());
+      if (!isExpired(cacheRef.current.updatedAt)) {
+        next = next.map(item => {
+          const cached = cacheRef.current.branches?.[item?.branch?.id];
+          if (!cached) return item;
+          const set = new Set(cached);
+          return {
+            ...item,
+            queue: Array.from(set).map(id => {
+              const vv = videos.find(v => v.id === id);
+              return vv ? { id: vv.id, title: vv.title } : { id };
+            })
+          };
+        });
+      }
+      setQueueStatus(next);
     } catch (e) {
-      console.error('[AssignVideos] save', e);
-      const msg = e?.response?.data?.message || 'No se pudo guardar la asignación';
-      toast.error(msg, { title: 'Error' });
+      console.error('[AssignVideos] refresh', e);
     }
   };
 
+  // Toggle celda
+  const toggleCell = async ({ videoId, branchId, nextChecked }) => {
+    const current = new Set(assignedByBranch.get(branchId) || []);
+    if (nextChecked) current.add(videoId); else current.delete(videoId);
+
+    // Optimismo + cache
+    writeCache(branchId, current);
+    setQueueStatus(prev => {
+      const copy = [...prev];
+      const idx = copy.findIndex(r => r.branch?.id === branchId);
+      const mapped = Array.from(current).map(id => {
+        const vv = videos.find(v => v.id === id);
+        return vv ? { id: vv.id, title: vv.title } : { id };
+      });
+      if (idx >= 0) copy[idx] = { ...copy[idx], queue: mapped };
+      else {
+        const branch = branches.find(b => b.id === branchId) || { id: branchId, name: `Sucursal ${branchId}`, code: `B-${branchId}` };
+        copy.push({ branch, queue: mapped });
+      }
+      return copy;
+    });
+
+    try {
+      setIsSavingCell({ branchId, videoId });
+      await http.post(`/branches/${branchId}/videos`, { video_ids: Array.from(current) });
+      await refreshQueueStatus();
+    } catch (e) {
+      console.error('[AssignVideos] toggle', e);
+      toast.error(e?.response?.data?.message || 'No se pudo actualizar la asignación', { title: 'Error' });
+    } finally {
+      setIsSavingCell(null);
+    }
+  };
+
+  // Masivos (solo visibles)
+  const setAllForBranch = async (branchId, mode) => {
+    const base = new Set(assignedByBranch.get(branchId) || []);
+    if (mode === 'all') filteredVideos.forEach(v => base.add(v.id));
+    else filteredVideos.forEach(v => base.delete(v.id));
+    writeCache(branchId, base);
+    setQueueStatus(prev => {
+      const mapped = Array.from(base).map(id => {
+        const vv = videos.find(v => v.id === id);
+        return vv ? { id: vv.id, title: vv.title } : { id };
+      });
+      const copy = [...prev];
+      const idx = copy.findIndex(r => r.branch?.id === branchId);
+      if (idx >= 0) copy[idx] = { ...copy[idx], queue: mapped };
+      else copy.push({ branch: branches.find(b => b.id === branchId), queue: mapped });
+      return copy;
+    });
+    try {
+      setIsSavingCell({ branchId, videoId: -1 });
+      await http.post(`/branches/${branchId}/videos`, { video_ids: Array.from(base) });
+      await refreshQueueStatus();
+    } catch (e) {
+      console.error('[AssignVideos] setAll', e);
+      toast.error('No se pudo completar la acción masiva', { title: 'Error' });
+    } finally {
+      setIsSavingCell(null);
+    }
+  };
+  const invertForBranch = async (branchId) => {
+    const base = new Set(assignedByBranch.get(branchId) || []);
+    filteredVideos.forEach(v => base.has(v.id) ? base.delete(v.id) : base.add(v.id));
+    writeCache(branchId, base);
+    setQueueStatus(prev => {
+      const mapped = Array.from(base).map(id => {
+        const vv = videos.find(v => v.id === id);
+        return vv ? { id: vv.id, title: vv.title } : { id };
+      });
+      const copy = [...prev];
+      const idx = copy.findIndex(r => r.branch?.id === branchId);
+      if (idx >= 0) copy[idx] = { ...copy[idx], queue: mapped };
+      else copy.push({ branch: branches.find(b => b.id === branchId), queue: mapped });
+      return copy;
+    });
+    try {
+      setIsSavingCell({ branchId, videoId: -2 });
+      await http.post(`/branches/${branchId}/videos`, { video_ids: Array.from(base) });
+      await refreshQueueStatus();
+    } catch (e) {
+      console.error('[AssignVideos] invert', e);
+      toast.error('No se pudo invertir la selección', { title: 'Error' });
+    } finally {
+      setIsSavingCell(null);
+    }
+  };
+
+  // Render
   return (
-    <div className="assign-container">
-      <h2>📺 Asignar Videos a una Sucursal</h2>
-      <p>
-        Selecciona una sucursal del listado y marca los videos que deben reproducirse en ella.
-        También puedes quitar videos desde aquí.
-      </p>
-
-      <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 16 }}>
-        {/* Sucursales */}
-        <div className="panel">
-          <div className="panel-header">
-            <span>📂 Sucursales</span>
-            <input
-              placeholder="Buscar sucursal por nombre o código..."
-              value={filterBranch}
-              onChange={(e) => setFilterBranch(e.target.value)}
-              className="input"
-            />
-          </div>
-
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px' }}>Sucursal</th>
-                <th style={{ textAlign: 'left', padding: '8px' }}>Código</th>
-                <th style={{ textAlign: 'left', padding: '8px' }}>Asignados</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBranches.length === 0 ? (
-                <tr><td colSpan={3} style={{ padding: 10, color: '#9fb4c3' }}>No hay resultados</td></tr>
-              ) : filteredBranches.map(b => (
-                <tr
-                  key={b.id}
-                  className={selectedBranchId === b.id ? 'row-active' : ''}
-                  onClick={() => setSelectedBranchId(b.id)}
-                  style={{ cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,.06)' }}
-                >
-                  <td style={{ padding: '8px' }}>{b.name}</td>
-                  <td style={{ padding: '8px' }}>{b.code}</td>
-                  <td style={{ padding: '8px' }}>{assignedCountByBranch.get(b.id) ?? 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="assign excel">
+      <div className="assign__header">
+        <div className="assign__title">
+          <span className="assign__icon">📺</span>
+          <h2>Asignar Videos a Sucursales</h2>
         </div>
+        <p className="assign__subtitle">
+          Se muestran 4 sucursales a la vez; desplázate horizontalmente para ver más.
+        </p>
+      </div>
 
-        {/* Videos */}
-        <div className="panel">
-          <div className="panel-header" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span>🎞️ Videos disponibles</span>
+      <div className="card">
+        <div className="card__header row">
+          <h3>🎞️ Videos disponibles</h3>
+          <div className="input-wrap">
             <input
-              placeholder="Buscar video por título..."
+              type="text"
+              placeholder="Buscar video por título…"
               value={filterVideo}
               onChange={(e) => setFilterVideo(e.target.value)}
-              className="input"
             />
           </div>
+          <button className="btn ghost" onClick={refreshQueueStatus}>Refrescar estado</button>
+        </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ opacity: .8 }}>
-              {selectedBranchId ? 'Sucursal seleccionada' : 'Selecciona una sucursal'}
-            </span>
-            <span style={{ marginLeft: 'auto', opacity: .8 }}>Seleccionados: {selected.size}</span>
-            <button className="btn-small" onClick={selectAll}>Seleccionar todo</button>
-            <button className="btn-small" onClick={clearAll}>Quitar todo</button>
-            <button className="btn-green" onClick={saveAssignment} disabled={!selectedBranchId}>
-              Guardar asignación
-            </button>
-          </div>
-
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="table-wrap table-wrap--excel">
+          <table className="table table--excel">
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', padding: '8px' }}>Título</th>
-                <th style={{ padding: '8px', width: 140 }}>Acciones</th>
+                <th className="sticky-left">Video</th>
+                {branches.map(b => {
+                  const set = assignedByBranch.get(b.id) || new Set();
+                  const total = set.size;
+                  let inFilter = 0;
+                  set.forEach(id => { if (filteredIdSet.has(id)) inFilter++; });
+                  const hidden = Math.max(0, total - inFilter);
+
+                  return (
+                    <th key={b.id} title={b.code} className="branch-col">
+                      <div className="th-top">
+                        <div>{b.name} <span className="muted mono">({b.code})</span></div>
+                        <div className="meta">
+                          <span className="badge">Asignados: {total}</span>
+                          <span className="badge ghost">En vista: {inFilter}/{filteredVideos.length}</span>
+                          {hidden > 0 && <span className="badge danger">Ocultos: {hidden}</span>}
+                        </div>
+                      </div>
+                      <div className="col-actions">
+                        <button className="mini ghost" disabled={!!isSavingCell} onClick={() => setAllForBranch(b.id, 'all')}>Todos</button>
+                        <button className="mini ghost" disabled={!!isSavingCell} onClick={() => setAllForBranch(b.id, 'none')}>Ninguno</button>
+                        <button className="mini ghost" disabled={!!isSavingCell} onClick={() => invertForBranch(b.id)}>Invertir</button>
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {filteredVideos.length === 0 ? (
-                <tr><td colSpan={2} style={{ padding: 10, color: '#9fb4c3' }}>
-                  No hay videos que coincidan con la búsqueda.
-                </td></tr>
-              ) : filteredVideos.map(v => {
-                const checked = selected.has(v.id);
-                return (
-                  <tr key={v.id} style={{ borderTop: '1px solid rgba(255,255,255,.06)' }}>
-                    <td style={{ padding: '8px' }}>{v.title}</td>
-                    <td style={{ padding: '8px' }}>
-                      <button
-                        className={checked ? 'btn-secondary' : 'btn-primary'}
-                        onClick={() => toggleVideo(v.id)}
-                      >
-                        {checked ? 'Quitar' : 'Agregar'}
-                      </button>
-                    </td>
+              {loading ? (
+                <tr><td className="sticky-left" colSpan={1 + branches.length}>Cargando…</td></tr>
+              ) : filteredVideos.length === 0 ? (
+                <tr><td className="sticky-left" colSpan={1 + branches.length}>No hay videos para mostrar.</td></tr>
+              ) : (
+                filteredVideos.map(v => (
+                  <tr key={v.id}>
+                    <td className="sticky-left">{v.title}</td>
+                    {branches.map(b => {
+                      const checked = assignedByBranch.get(b.id)?.has(v.id) || false;
+                      const saving = isSavingCell && isSavingCell.branchId === b.id && isSavingCell.videoId === v.id;
+                      return (
+                        <td key={`${b.id}-${v.id}`} className="cell-center">
+                          <label className={`chk ${saving ? 'is-loading' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={!!isSavingCell}
+                              onChange={(e) => toggleCell({ videoId: v.id, branchId: b.id, nextChecked: e.target.checked })}
+                            />
+                            <span className="box" />
+                          </label>
+                        </td>
+                      );
+                    })}
                   </tr>
-                );
-              })}
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
-
-      <style>{`
-        .panel { background: var(--panel, #15232f); padding: 12px; border-radius: 10px; }
-        .panel-header { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-        .input { flex:1; padding:8px; border-radius:8px; border:1px solid var(--line,#2e3b47); background:#0f1a23; color:#e8f0f7; }
-        .btn-small { padding:6px 8px; border-radius:8px; border:0; background:#2e4764; color:#fff; }
-        .btn-green { padding:8px 10px; border-radius:8px; border:0; background:#2b8a3e; color:#fff; font-weight:600; }
-        .btn-primary { padding:6px 10px; border-radius:8px; border:0; background:#4c89ff; color:#fff; }
-        .btn-secondary { padding:6px 10px; border-radius:8px; border:0; background:#5b6b7a; color:#fff; }
-        .row-active { background: rgba(76,137,255,.12); }
-      `}</style>
     </div>
   );
 }
