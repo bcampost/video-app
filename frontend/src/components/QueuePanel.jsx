@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import http from '../api/http';
 import { useToast } from '../ui/ToastProvider.jsx';
-import '../styles/QueuePanel.css'; // <— importa los estilos
+import '../styles/QueuePanel.css';
 
 /* ================= helpers ================= */
 
@@ -26,27 +26,47 @@ const loadAssignCache = () => {
   } catch { return {}; }
 };
 
+// normaliza id a number si es posible
+const toNum = (v) => (v === null || v === undefined ? v : (isNaN(Number(v)) ? v : Number(v)));
+
 const titleOf = (idOrObj, titleById) => {
   if (!idOrObj && idOrObj !== 0) return '—';
+  if (typeof idOrObj === 'object' && (idOrObj.title || idOrObj.name)) {
+    return idOrObj.title || idOrObj.name;
+  }
   const id = typeof idOrObj === 'object' ? idOrObj.id : idOrObj;
-  return titleById.get(id) ?? (typeof idOrObj === 'object' ? (idOrObj.title || idOrObj.name) : null) ?? `Video ${id}`;
+  const nid = toNum(id);
+  return titleById.get(nid) ?? `Video ${nid}`;
 };
 
-const extractNowPlayingId = (row) => {
-  const cands = [
-    row?.now_playing?.id,
-    row?.nowPlaying?.id,
-    row?.playing?.id,
-    row?.current?.id,
-    row?.now_playing_id,
-    row?.nowPlayingId,
-    row?.current_video_id,
-    row?.playing_video_id,
-    row?.currentVideoId,
-    row?.video_id,
+// Intenta devolver el objeto {id, title} del "now" desde múltiples variantes
+const getNowEntry = (row, titleById) => {
+  const candidatesObj = [
+    row?.now_playing, row?.nowPlaying,
+    row?.current, row?.playing,
+  ].filter(Boolean);
+
+  if (candidatesObj.length) {
+    const obj = candidatesObj.find(x => x && (x.id ?? x.video_id ?? x.videoId) != null) || candidatesObj[0];
+    const id = toNum(obj?.id ?? obj?.video_id ?? obj?.videoId);
+    const title = (obj?.title || obj?.name) ?? titleOf(id, titleById);
+    return (id != null) ? { id, title } : null;
+  }
+
+  // Si no vino objeto, buscar ids sueltos
+  const candidatesId = [
+    row?.now_playing_id, row?.nowPlayingId,
+    row?.current_video_id, row?.playing_video_id,
     row?.heartbeat?.video_id,
-  ];
-  return cands.find(v => Number.isInteger(v)) ?? null;
+  ].filter(v => v !== undefined && v !== null);
+
+  const rawId = candidatesId.find(v => Number.isInteger(toNum(v)));
+  if (rawId !== undefined) {
+    const id = toNum(rawId);
+    return { id, title: titleOf(id, titleById) };
+  }
+
+  return null;
 };
 
 function enrich(base, titleById) {
@@ -55,27 +75,34 @@ function enrich(base, titleById) {
   return base.map((item) => {
     const branch = item.branch;
 
-    // 1) Cola base (si viene en status) mapeada a títulos
+    // Cola base del status
     const statusQueue = Array.isArray(item.queue) ? item.queue : [];
-    const statusQueueMapped = statusQueue.map(v => ({ id: v.id, title: titleOf(v, titleById) }));
+    const statusQueueMapped = statusQueue.map(v => {
+      const id = toNum(v?.id ?? v?.video_id ?? v?.videoId);
+      return { id, title: titleOf(v, titleById) };
+    });
+
+    // Mapa por id para lookup rápido
     const byId = new Map(statusQueueMapped.map(v => [v.id, v]));
 
-    // 2) Orden preferente por cache (si existe)
+    // Orden preferente por cache (si existe)
     const cached = assignCache?.[branch?.id];
-    let ordered = Array.isArray(cached) && cached.length
-      ? cached.map(id => byId.get(id) || { id, title: titleOf(id, titleById) })
+    const ordered = Array.isArray(cached) && cached.length
+      ? cached.map(id => {
+          const nid = toNum(id);
+          return byId.get(nid) || { id: nid, title: titleOf(nid, titleById) };
+        })
       : statusQueueMapped;
 
-    // 3) Extraer now playing; si no existe, usar el primero de la cola
-    const nowId = extractNowPlayingId(item);
-    let now = null;
-    if (Number.isInteger(nowId)) {
-      now = { id: nowId, title: titleOf(nowId, titleById) };
-    } else if (ordered.length > 0) {
-      now = { id: ordered[0].id, title: titleOf(ordered[0].id, titleById) };
+    // Resolver "now" con prioridad a lo que venga del backend
+    let now = getNowEntry(item, titleById);
+
+    // Fallback: si no hay "now" en status, usa el primero visible de la cola ordenada
+    if (!now && ordered.length > 0) {
+      now = { id: ordered[0].id, title: ordered[0].title };
     }
 
-    // 4) Cola = todos menos el actual
+    // Cola final = ordered sin el "now"
     const queue = now ? ordered.filter(v => v.id !== now.id) : ordered;
 
     return { branch, now_playing: now, queue };
@@ -93,10 +120,10 @@ export default function QueuePanel() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const mounted = useRef(true);
 
-  // Auto refresh 15s
+  // Auto refresh 5s
   useEffect(() => {
     mounted.current = true;
-    const id = setInterval(() => setTick(t => t + 1), 15000);
+    const id = setInterval(() => setTick(t => t + 1), 5000);
     return () => { mounted.current = false; clearInterval(id); };
   }, []);
 
@@ -110,7 +137,7 @@ export default function QueuePanel() {
           http.get('/branches/queue-status'),
         ]);
         const vids = norm(videosRes);
-        const map = new Map(vids.map(v => [v.id, (v.title ?? v.name ?? `Video ${v.id}`)]));
+        const map = new Map(vids.map(v => [toNum(v.id), (v.title ?? v.name ?? `Video ${v.id}`)]));
         setTitleById(map);
 
         const base = norm(qsRes);
