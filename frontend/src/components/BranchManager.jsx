@@ -72,18 +72,48 @@ function CredentialModal({ open, onClose, onSave, initial = {} }) {
       </div>
 
       {/* estilos mínimos del modal */}
-      <style>{`
-        .cmask { position:fixed; inset:0; background:rgba(0,0,0,.45); display:grid; place-items:center; z-index:50; }
-        .cmodal { width:min(520px,92vw); background:var(--panel,#182532); color:#e8f0f7; border:1px solid rgba(255,255,255,.06);
-                  border-radius:14px; padding:18px; box-shadow:0 18px 60px rgba(0,0,0,.35); }
-        .clabel { display:block; margin:.6rem 0 .25rem; color:#9fb4c3; font-size:.9rem; }
-        .cinput { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line,#2e3b47); background:#0f1a23; color:#e8f0f7; outline:none; }
-        .cpasswrap { position:relative; }
-        .ceye { position:absolute; right:6px; top:50%; transform:translateY(-50%); border:0; background:transparent; font-size:18px; cursor:pointer; color:#cfe1ff; }
-        .cactions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
-        .btn-ghost { background:#223346; color:#cfe3ff; border:1px solid rgba(255,255,255,.08); padding:8px 12px; border-radius:10px; }
-        .btn-primary { background:#4c89ff; color:#fff; border:0; padding:10px 14px; border-radius:10px; font-weight:700; }
-      `}</style>
+<style>{`
+  .cmask {
+    position:fixed; inset:0; background:rgba(0,0,0,.45);
+    display:grid; place-items:center; z-index:50;
+  }
+  .cmodal {
+    width:min(520px,92vw);
+    background:var(--panel,#182532); color:#e8f0f7;
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:14px; padding:18px;
+    box-shadow:0 18px 60px rgba(0,0,0,.35);
+    overflow:hidden;                 /* ⬅️ evita que algo se salga del card */
+  }
+  .cmodal * { box-sizing: border-box; } /* ⬅️ asegura cálculo correcto de ancho */
+
+  .clabel { display:block; margin:.6rem 0 .25rem; color:#9fb4c3; font-size:.9rem; }
+  .cinput {
+    width:100%;                      /* ⬅️ no más de 100% del contenedor */
+    max-width:100%;
+    min-width:0;                     /* ⬅️ por si el contenedor usa grid/flex */
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid var(--line,#2e3b47);
+    background:#0f1a23; color:#e8f0f7; outline:none;
+  }
+
+  .cpasswrap { position:relative; min-width:0; }
+  .cpasswrap .cinput {
+    padding-right:44px;              /* ⬅️ deja espacio para el “ojo” */
+  }
+  .ceye {
+    position:absolute; right:10px; top:50%;
+    transform:translateY(-50%);
+    border:0; background:transparent; font-size:18px;
+    cursor:pointer; color:#cfe1ff;
+  }
+
+  .cactions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  .btn-ghost { background:#223346; color:#cfe3ff; border:1px solid rgba(255,255,255,.08); padding:8px 12px; border-radius:10px; }
+  .btn-primary { background:#4c89ff; color:#fff; border:0; padding:10px 14px; border-radius:10px; font-weight:700; }
+`}</style>
+
     </div>
   );
 }

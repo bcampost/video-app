@@ -96,3 +96,85 @@
   background: linear-gradient(180deg, rgba(4,120,87,.85), rgba(5,104,76,.8));
   color: #ecfeff;
 }
+
+
+/* ====== Fix puntual del input en el modal pm-* (Editar video) ====== */
+
+/* asegura que el contenedor permita que los hijos se encojan */
+.pm-dialog .pm-content {
+  min-width: 0;
+}
+
+/* SOLO el cuadro de texto del modal */
+.pm-dialog .pm-content .pm-input {
+  /* separarlo de los bordes del card */
+  margin: 8px 12px 0;
+  width: calc(100% - 24px);     /* 100% menos los márgenes laterales */
+  max-width: calc(100% - 24px);
+  min-width: 0;
+
+  /* look & feel y box model correcto */
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0b1b27;
+  color: #e9f1f6;
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.pm-dialog .pm-content .pm-input:focus {
+  border-color: #2ca76f;
+  box-shadow: 0 0 0 2px rgba(44,167,111,.25);
+}
+
+/* ====== Modal Editar perfil de sucursal (pm-branch) ====== */
+
+/* Permite que los hijos se encojan dentro del contenedor del modal */
+.pm-dialog.pm-branch .pm-content { min-width: 0; }
+
+/* Alinear los labels con el mismo margen que el input */
+.pm-dialog.pm-branch .pm-content .pm-label {
+  display: block;
+  margin: 0 12px 6px;                 /* igual que el input */
+}
+
+/* Inputs: recogidos, sin desbordar, 100% del contenedor menos márgenes */
+.pm-dialog.pm-branch .pm-content .pm-input {
+  margin: 0 12px 12px;
+  width: calc(100% - 24px);
+  max-width: calc(100% - 24px);
+  min-width: 0;
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0b1b27;
+  color: #e9f1f6;
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+/* Campo de contraseña: deja espacio para el botón "ojo" */
+.pm-dialog.pm-branch .pm-content input[type="password"],
+.pm-dialog.pm-branch .pm-content .pm-password input {
+  padding-right: 44px;                /* espacio para el toggle */
+}
+
+/* Si tu botón “ojo” está dentro del mismo contenedor, lo posicionamos */
+.pm-dialog.pm-branch .pm-content .pm-password { position: relative; }
+.pm-dialog.pm-branch .pm-content .pm-password .toggle,
+.pm-dialog.pm-branch .pm-content .toggle-password,
+.pm-dialog.pm-branch .pm-content button.pm-eye {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.18);
+  cursor: pointer;
+}

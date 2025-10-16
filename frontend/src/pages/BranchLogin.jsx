@@ -91,7 +91,7 @@ export default function BranchLogin() {
         <label style={{ ...styles.label, marginTop: 10 }}>Contraseña</label>
         <div style={styles.passWrap}>
           <input
-            style={{ ...styles.input, paddingRight: 36 }}
+            style={{ ...styles.input, paddingRight: 44 }}
             type={show ? 'text' : 'password'}
             placeholder="••••••••"
             value={password}
@@ -143,6 +143,7 @@ const styles = {
     padding: 20,
     boxShadow: '0 18px 60px rgba(0,0,0,.45)',
     backdropFilter: 'blur(6px)',
+    overflow: 'hidden', // recorta cualquier detalle que se salga del card
   },
   header: { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 },
   logo: {
@@ -162,6 +163,9 @@ const styles = {
   label: { fontSize: 13, color: '#9fb4c3', margin: '10px 0 6px', display: 'block' },
   input: {
     width: '100%',
+    maxWidth: '100%',      // nunca excede el ancho del card
+    minWidth: 0,           // evita desborde en contenedores flex/grid
+    boxSizing: 'border-box',
     background: '#0F1A23',
     color: '#E7F0FA',
     border: '1px solid rgba(255,255,255,.08)',
@@ -169,7 +173,7 @@ const styles = {
     padding: '12px 12px',
     outline: 'none',
   },
-  passWrap: { position: 'relative' },
+  passWrap: { position: 'relative', minWidth: 0 },
   eye: {
     position: 'absolute',
     right: 8,

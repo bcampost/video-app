@@ -182,13 +182,13 @@ export default function QueuePanel() {
           <svg width="18" height="18" viewBox="0 0 24 24" className="qp__icon" aria-hidden>
             <path fill="currentColor" d="M12 8v5l3 1m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
           </svg>
-          <h3>En cola por sucursal</h3>
+          <h3>En cola </h3>
         </div>
         <div className="qp__actions">
-          <span className="qp__stamp" title="Última actualización">Actualizado {stamp}</span>
+          <span className="qp__stamp" title="Última actualización">  {stamp}</span>
           <button className="btn-ghost qp__refresh" onClick={() => setTick(t => t + 1)} title="Refrescar">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden><path fill="currentColor" d="M21 12a9 9 0 1 1-3-6.7V3h2v6h-6V7h3.7A7 7 0 1 0 19 12"/></svg>
-            <span>Actualizar</span>
+            <span></span>
           </button>
         </div>
       </div>
@@ -230,7 +230,7 @@ export default function QueuePanel() {
               <div className="qp__now">
                 <span className="pill now">
                   <span className="dot" />
-                  Reproduciendo ahora
+                  Live On
                 </span>
                 <div className="now-title" title={row.now_playing?.title || '—'}>
                   {row.now_playing?.title || '—'}
